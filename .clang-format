@@ -1,0 +1,10 @@
+BasedOnStyle: llvm
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# Optional but recommended:
+ContinuationIndentWidth: 4
+BreakBeforeBraces: Allman   # or LLVM / Google, your taste
+ColumnLimit: 0              # do not wrap lines
+SpaceBeforeParens: ControlStatements
