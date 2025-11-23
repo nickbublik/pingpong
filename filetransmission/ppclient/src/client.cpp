@@ -1,14 +1,11 @@
 #include <iostream>
 #include <net_common/net_client.hpp>
+#include <ppcommon/ppcommon.hpp>
 
-enum class MsgTypes : uint32_t
+namespace PingPong
 {
-    Receive,
-    Send,
-    Echo
-};
 
-class FileClient : public Net::ClientBase<MsgTypes>
+class FileClient : public Net::ClientBase<Common::EMessageType>
 {
   public:
     FileClient()
@@ -20,15 +17,19 @@ class FileClient : public Net::ClientBase<MsgTypes>
     template <typename T>
     void sendToEcho(const T &data)
     {
-        Net::Message<MsgTypes> msg;
-        msg.header.id = MsgTypes::Echo;
+        Net::Message<Common::EMessageType> msg;
+        msg.header.id = Common::EMessageType::Send;
         msg << data;
         send(msg);
     }
 };
 
+} // namespace PingPong
+
 int main()
 {
+    using namespace PingPong;
+
     FileClient c;
     c.connect("127.0.0.1", 60000);
 
@@ -57,7 +58,7 @@ int main()
             std::cout << "try to pop_front\n";
             auto msg = c.incoming().pop_front().msg;
 
-            if (msg.header.id == MsgTypes::Echo)
+            if (msg.header.id == Common::EMessageType::Send)
             {
                 int echoed_data;
                 msg >> echoed_data;
