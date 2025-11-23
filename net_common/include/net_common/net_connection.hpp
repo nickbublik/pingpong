@@ -144,19 +144,19 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void readHeader()
     {
-        boost::asio::async_read(m_socket, boost::asio::buffer(&m_tmp_message_in.header, sizeof(MessageHeader<T>)),
+        boost::asio::async_read(m_socket, boost::asio::buffer(&m_forming_in_message.header, sizeof(MessageHeader<T>)),
                                 [this](std::error_code ec, size_t length)
                                 {
                                     if (!ec)
                                     {
-                                        if (m_tmp_message_in.header.size > 0)
+                                        if (m_forming_in_message.header.size > 0)
                                         {
-                                            m_tmp_message_in.body.resize(m_tmp_message_in.header.size);
+                                            m_forming_in_message.body.resize(m_forming_in_message.header.size);
                                             readBody();
                                         }
                                         else
                                         {
-                                            addToIncomingMessageQueue();
+                                            addToIncomingMessageQueue(m_forming_in_message);
                                         }
                                     }
                                     else
@@ -169,12 +169,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void readBody()
     {
-        boost::asio::async_read(m_socket, boost::asio::buffer(m_tmp_message_in.body.data(), m_tmp_message_in.body.size()),
+        boost::asio::async_read(m_socket, boost::asio::buffer(m_forming_in_message.body.data(), m_forming_in_message.body.size()),
                                 [this](std::error_code ec, size_t length)
                                 {
                                     if (!ec)
                                     {
-                                        addToIncomingMessageQueue();
+                                        addToIncomingMessageQueue(m_forming_in_message);
                                     }
                                     else
                                     {
@@ -183,12 +183,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                 });
     }
 
-    void addToIncomingMessageQueue()
+    void addToIncomingMessageQueue(const Message<T>& msg)
     {
         if (m_owner_type == EOwner::Server)
-            m_messages_in.push_back({this->shared_from_this(), m_tmp_message_in});
+            m_messages_in.push_back({this->shared_from_this(), msg});
         else
-            m_messages_in.push_back({nullptr, m_tmp_message_in});
+            m_messages_in.push_back({nullptr, msg});
 
         readHeader();
     }
@@ -198,7 +198,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     boost::asio::io_context &m_asio_context;
     TSQueue<Message<T>> m_messages_out;
     TSQueue<OwnedMessage<T>> &m_messages_in;
-    Message<T> m_tmp_message_in;
+    Message<T> m_forming_in_message;
     EOwner m_owner_type = EOwner::Server;
     uint32_t m_id = 0;
 };

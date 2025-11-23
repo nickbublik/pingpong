@@ -14,13 +14,13 @@ class TSQueue
     TSQueue(const TSQueue<T> &) = delete;
     ~TSQueue() { clear(); }
 
-    const T &front()
+    const T &front() const
     {
         std::scoped_lock lock(m_mutex);
         return m_deq.front();
     }
 
-    const T &back()
+    const T &back() const
     {
         std::scoped_lock lock(m_mutex);
         return m_deq.back();
