@@ -12,9 +12,10 @@ enum class EMessageType : uint32_t
     // Server replies
     Accept,
     Reject,
+    Abort,
     // File transmission control
     Send,
-    ReceiveAsk,
+    RequestReceive,
     Receive,
     // File transmission process
     Chunk,
