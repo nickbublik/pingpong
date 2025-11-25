@@ -1,6 +1,5 @@
 #pragma once
 
-#include "net_common.hpp"
 #include "net_message.hpp"
 
 namespace Net
@@ -79,12 +78,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     }
 
   public:
-    void send(const Message<T> &msg)
+    void send(const Message<T> msg)
     {
-        boost::asio::post(m_asio_context, [this, msg]()
+        boost::asio::post(m_asio_context, [this, msg = std::move(msg)]()
                           {
                             bool already_writing = !m_messages_out.empty();
-                            m_messages_out.push_back(msg);
+                            m_messages_out.push_back(std::move(msg));
                             if (!already_writing)
                                 writeHeader(); });
     }
@@ -156,7 +155,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                         }
                                         else
                                         {
-                                            addToIncomingMessageQueue(m_forming_in_message);
+                                            addToIncomingMessageQueue();
                                         }
                                     }
                                     else
@@ -174,7 +173,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                 {
                                     if (!ec)
                                     {
-                                        addToIncomingMessageQueue(m_forming_in_message);
+                                        addToIncomingMessageQueue();
                                     }
                                     else
                                     {
@@ -183,12 +182,14 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                 });
     }
 
-    void addToIncomingMessageQueue(const Message<T>& msg)
+    void addToIncomingMessageQueue()
     {
         if (m_owner_type == EOwner::Server)
-            m_messages_in.push_back({this->shared_from_this(), msg});
+            m_messages_in.push_back({this->shared_from_this(), std::move(m_forming_in_message)});
         else
-            m_messages_in.push_back({nullptr, msg});
+            m_messages_in.push_back({nullptr, std::move(m_forming_in_message)});
+
+        m_forming_in_message = Message<T>{};
 
         readHeader();
     }

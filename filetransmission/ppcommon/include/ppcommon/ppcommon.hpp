@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 namespace PingPong
 {
@@ -20,6 +21,18 @@ enum class EMessageType : uint32_t
     // File transmission process
     Chunk,
     FinalChunk
+};
+
+enum class EPayloadType
+{
+    File
+};
+
+struct SendRequest
+{
+    EPayloadType payload_type;
+    uint64_t size;
+    std::vector<uint8_t> code;
 };
 
 } // namespace Common

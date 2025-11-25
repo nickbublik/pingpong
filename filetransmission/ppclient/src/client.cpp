@@ -31,11 +31,24 @@ int main()
     c.connect("127.0.0.1", 60000);
 
     bool running = true;
+    uint64_t chunksize;
 
     {
-        Message msg;
-        msg.header.id = Common::EMessageType::Send;
-        c.send(msg);
+        {
+            Message msg;
+            msg.header.id = Common::EMessageType::Send;
+
+            // EPayloadType payload_type;
+            // uint64_t size;
+            // std::vector<uint8_t> code;
+            std::string code{"my-code-6"};
+            std::cout << "TR#0\n";
+            msg << Common::EPayloadType::File << static_cast<uint64_t>(72);
+            size_t offset = msg.body.size();
+            msg.body.resize(msg.body.size() + code.size());
+            std::memcpy(msg.body.data() + offset, code.data(), code.size());
+            c.send(std::move(msg));
+        }
 
         c.incoming().wait();
 
@@ -49,15 +62,15 @@ int main()
             }
             else if (msg.header.id == Common::EMessageType::Accept)
             {
-                std::cout << "Server accepted sending a file\n";
+                msg >> chunksize;
+                std::cout << "Server accepted sending a file with max chunksize of " << chunksize << " bytes\n";
                 break;
             }
         }
     }
 
-    const uint64_t c_chunksize{128};
-    ClientSenderSession session(Session::EPayloadType::File, c.incoming(), std::filesystem::path{"./test.txt"}, c_chunksize, [&c](const Message &msg)
-                                { c.send(msg); });
+    ClientSenderSession session(Common::EPayloadType::File, c.incoming(), std::filesystem::path{"./test.txt"}, chunksize, [&c](Message &&msg)
+                                { c.send(std::move(msg)); });
     bool res = session.mainLoop();
     if (!res)
     {

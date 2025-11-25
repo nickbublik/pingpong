@@ -1,6 +1,5 @@
 #pragma once
 
-#include "net_common.hpp"
 #include "net_connection.hpp"
 #include "net_message.hpp"
 
@@ -28,7 +27,6 @@ class ClientBase
             boost::asio::ip::tcp::resolver::results_type endpoints = resolver.resolve(host, std::to_string(port));
 
             m_connection = std::make_unique<Connection<T>>(Connection<T>::EOwner::Client, m_context, boost::asio::ip::tcp::socket(m_context), m_messages_in);
-            // EOwner parent, boost::asio::io_context &context, boost::asio::ip::tcp::socket socket, TSQueue<OwnedMessage<T>> &messages_in
             m_connection->connectToServer(endpoints);
             m_context_thread = std::thread([this]()
                                            { m_context.run(); });
@@ -69,6 +67,12 @@ class ClientBase
     {
         if (isConnected())
             m_connection->send(msg);
+    }
+
+    void send(const Message<T> &&msg)
+    {
+        if (isConnected())
+            m_connection->send(std::move(msg));
     }
 
     TSQueue<OwnedMessage<T>> &incoming()

@@ -88,11 +88,11 @@ class ServerBase
             });
     }
 
-    void messageClient(std::shared_ptr<Connection<T>> client, const Message<T> &msg)
+    void messageClient(std::shared_ptr<Connection<T>> client, Message<T> msg)
     {
         if (client && client->isConnected())
         {
-            client->send(msg);
+            client->send(std::move(msg));
         }
         else
         {
@@ -103,7 +103,7 @@ class ServerBase
         }
     }
 
-    void messageAllClients(const Message<T> &msg, std::shared_ptr<Connection<T>> ignore_client = nullptr)
+    void messageAllClients(Message<T> msg, std::shared_ptr<Connection<T>> ignore_client = nullptr)
     {
         bool some_clients_disconnected = false;
 
@@ -111,7 +111,7 @@ class ServerBase
         {
             if (client && client->isConnected() && client != ignore_client)
             {
-                client->send(msg);
+                client->send(std::move(msg));
             }
             else
             {
@@ -134,7 +134,7 @@ class ServerBase
         while (msg_cnt < max_messages && !m_messages_in.empty())
         {
             auto msg = m_messages_in.pop_front();
-            onMessage(msg.remote, msg.msg);
+            onMessage(msg.remote, std::move(msg.msg));
             ++msg_cnt;
         }
     }
@@ -149,7 +149,7 @@ class ServerBase
     {
     }
 
-    virtual void onMessage(std::shared_ptr<Connection<T>> client, Message<T> &msg)
+    virtual void onMessage(std::shared_ptr<Connection<T>> client, Message<T>&& msg)
     {
     }
 

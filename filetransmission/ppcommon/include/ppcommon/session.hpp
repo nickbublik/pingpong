@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 
+#include "net_common/net_connection.hpp"
 #include "net_common/net_message.hpp"
 #include "ppcommon.hpp"
 #include "tsqueue/tsqueue.hpp"
@@ -13,14 +14,10 @@ namespace PingPong
 class Session
 {
   public:
-    enum class EPayloadType
-    {
-        File
-    };
     using Message = Net::Message<Common::EMessageType>;
 
   public:
-    Session(EPayloadType payload_type)
+    Session(Common::EPayloadType payload_type)
         : m_payload_type{payload_type}
     {
     }
@@ -28,7 +25,7 @@ class Session
     virtual ~Session() = default;
 
   protected:
-    EPayloadType m_payload_type;
+    Common::EPayloadType m_payload_type;
 };
 
 class ClientSession : public Session
@@ -37,7 +34,7 @@ class ClientSession : public Session
     using IncomingQueue = Net::TSQueue<Net::OwnedMessage<Common::EMessageType>>;
 
   public:
-    ClientSession(EPayloadType payload_type, IncomingQueue &messages_in)
+    ClientSession(Common::EPayloadType payload_type, IncomingQueue &messages_in)
         : Session(payload_type), m_messages_in{messages_in}
     {
     }
@@ -61,7 +58,7 @@ class ClientReceiverSession : public ClientSession
 class ClientSenderSession : public ClientSession
 {
   public:
-    ClientSenderSession(EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<void(const Message &)> sendcb)
+    ClientSenderSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<void(Message &&)> sendcb)
         : ClientSession(payload_type, messages_in), m_file{file}, m_max_chunk_size{chunksize}, m_sendcb{sendcb}
     {
     }
@@ -114,7 +111,7 @@ class ClientSenderSession : public ClientSession
                 msg.header.id = Common::EMessageType::FinalChunk;
                 msg.header.size = 0;
                 msg.body.clear();
-                m_sendcb(msg);
+                m_sendcb(std::move(msg));
                 break;
             }
             else
@@ -124,7 +121,7 @@ class ClientSenderSession : public ClientSession
                 msg.header.size = msg.body.size();
             }
 
-            m_sendcb(msg);
+            m_sendcb(std::move(msg));
         }
 
         ifs.close();
@@ -135,25 +132,58 @@ class ClientSenderSession : public ClientSession
   private:
     const std::filesystem::path m_file;
     const uint64_t m_max_chunk_size;
-    std::function<void(const Message &)> m_sendcb;
+    std::function<void(Message &&)> m_sendcb;
 };
 
 class ServerSession : public Session
 {
   public:
-    ServerSession(EPayloadType payload_type)
+    using ConnectionPtr = std::shared_ptr<Net::Connection<Common::EMessageType>>;
+
+  public:
+    ServerSession(Common::EPayloadType payload_type)
         : Session(payload_type)
     {
     }
 
   public:
-    virtual bool onMessage(const Message &msg) = 0;
+    virtual bool onMessage(Message &&msg) = 0;
 };
 
-class ServerReceiverSession : public ServerSession
+class ServerOneToOneRetranslatorSession : public ServerSession
 {
   public:
-    ServerReceiverSession(EPayloadType payload_type, const std::filesystem::path &file)
+    ServerOneToOneRetranslatorSession(Common::EPayloadType payload_type, ConnectionPtr sink)
+        : ServerSession(payload_type), m_sink(sink)
+    {
+    }
+
+    ~ServerOneToOneRetranslatorSession()
+    {
+    }
+
+    bool onMessage(Message &&msg) override
+    {
+        if (msg.header.id == Common::EMessageType::Chunk)
+        {
+            m_sink->send(std::move(msg));
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+  private:
+    ConnectionPtr m_sink;
+};
+
+class ServerSaveFileSession : public ServerSession
+{
+  public:
+    ServerSaveFileSession(Common::EPayloadType payload_type, const std::filesystem::path &file)
         : ServerSession(payload_type), m_ofs(file, std::ios::binary)
     {
         if (!m_ofs.is_open())
@@ -162,12 +192,12 @@ class ServerReceiverSession : public ServerSession
         }
     }
 
-    ~ServerReceiverSession()
+    ~ServerSaveFileSession()
     {
         m_ofs.close();
     }
 
-    bool onMessage(const Message &msg) override
+    bool onMessage(Message &&msg) override
     {
         if (msg.header.id == Common::EMessageType::Chunk)
         {
@@ -193,11 +223,6 @@ class ServerReceiverSession : public ServerSession
 
   private:
     std::ofstream m_ofs;
-};
-
-class ServerSenderSession : public Session
-{
-  public:
 };
 
 } // namespace PingPong
