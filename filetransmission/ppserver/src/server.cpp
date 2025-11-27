@@ -1,4 +1,6 @@
+#include <bitset>
 #include <iostream>
+#include <limits>
 #include <map>
 
 #include <boost/bimap.hpp>
@@ -78,22 +80,17 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
             std::cout << "TR#2.1\n";
 
+            std::cout << msg << '\n';
+
             Common::SendRequest send_request;
-            const size_t offset = sizeof(send_request.payload_type) + sizeof(send_request.size);
-            send_request.code.resize(msg.body.size() - offset);
-            std::cout << "TR#2.2\n";
-            std::memcpy(send_request.code.data(), msg.body.data(), msg.body.size() - offset);
-            msg >> send_request.payload_type >> send_request.size;
 
-            std::cout << "TR#2.3\n";
+            msg >> send_request.payload_type >> send_request.testlong;
+            std::string code_phrase;
+            code_phrase.resize(send_request.testlong);
+            msg >> code_phrase;
 
-            std::string code_phrase(send_request.code.begin(), send_request.code.end());
-            std::cout << "[" << client->getId()
-                << "]: wants to send some file with size = " << send_request.size
-                << " ,code = " << code_phrase
-                << '\n';
-
-            std::cout << "TR#3\n";
+            std::cout << "Message after read =\n"
+                      << msg;
 
             auto it = m_sessions.find(client);
             if (!(it == m_sessions.end() || it->second == nullptr))
@@ -106,14 +103,12 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
                 return;
             }
 
-            std::cout << "TR#4\n";
-            
             m_pending_senders.insert({code_phrase, client});
-            //std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, clients_file);
-            //Message outmsg;
-            //outmsg.header.id = Common::EMessageType::Accept;
-            //outmsg << m_max_chunk_size;
-            //client->send(outmsg);
+            //  std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, clients_file);
+            //  Message outmsg;
+            //  outmsg.header.id = Common::EMessageType::Accept;
+            //  outmsg << m_max_chunk_size;
+            //  client->send(outmsg);
         }
         else
         {

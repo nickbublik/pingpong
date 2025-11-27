@@ -38,15 +38,19 @@ int main()
             Message msg;
             msg.header.id = Common::EMessageType::Send;
 
+            // 1000720000000979899
+
             // EPayloadType payload_type;
-            // uint64_t size;
+            // uint64_t testlong;
             // std::vector<uint8_t> code;
-            std::string code{"my-code-6"};
+            std::string code{"abc"};
             std::cout << "TR#0\n";
-            msg << Common::EPayloadType::File << static_cast<uint64_t>(72);
-            size_t offset = msg.body.size();
-            msg.body.resize(msg.body.size() + code.size());
-            std::memcpy(msg.body.data() + offset, code.data(), code.size());
+            msg << code;
+            msg << static_cast<uint64_t>(72) << Common::EPayloadType::File;
+            // msg.body.resize(msg.body.size() + code.size());
+            // std::memcpy(msg.body.data() + offset, code.data(), code.size());
+            // msg.header.size = msg.size();
+            std::cout << msg << '\n';
             c.send(std::move(msg));
         }
 

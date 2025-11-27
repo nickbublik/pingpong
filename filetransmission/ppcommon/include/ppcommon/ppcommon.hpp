@@ -25,13 +25,14 @@ enum class EMessageType : uint32_t
 
 enum class EPayloadType
 {
+    Init,
     File
 };
 
 struct SendRequest
 {
     EPayloadType payload_type;
-    uint64_t size;
+    uint64_t testlong;
     std::vector<uint8_t> code;
 };
 
