@@ -41,7 +41,6 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
     void onMessage(ConnectionPtr client, Message &&msg) override
     {
-        std::cout << "TR#0\n";
         auto it = m_sessions.find(client);
         if (it != m_sessions.end() && it->second)
         {
@@ -70,27 +69,21 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
             return;
         }
 
-        std::cout << "TR#1\n";
-
         if (msg.header.id == Common::EMessageType::Send)
         {
-            std::cout << "TR#2\n";
-
             m_pending_senders.right.erase(client);
-
-            std::cout << "TR#2.1\n";
 
             std::cout << msg << '\n';
 
-            Common::SendRequest send_request;
+            Common::SendRequest request;
+            {
+                request.code = "abc";
+                request.code_size = request.code.size();
+                request.payload_type = Common::EPayloadType::File;
+            }
 
-            msg >> send_request.payload_type >> send_request.testlong;
-            std::string code_phrase;
-            code_phrase.resize(send_request.testlong);
-            msg >> code_phrase;
-
-            std::cout << "Message after read =\n"
-                      << msg;
+            msg >> request;
+            std::cout << "request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
 
             auto it = m_sessions.find(client);
             if (!(it == m_sessions.end() || it->second == nullptr))
@@ -103,19 +96,18 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
                 return;
             }
 
-            m_pending_senders.insert({code_phrase, client});
-            //  std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, clients_file);
-            //  Message outmsg;
-            //  outmsg.header.id = Common::EMessageType::Accept;
-            //  outmsg << m_max_chunk_size;
-            //  client->send(outmsg);
+            std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code << '\n';
+            m_pending_senders.insert({request.code, client});
+            // std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, clients_file);
+            // Message outmsg;
+            // outmsg.header.id = Common::EMessageType::Accept;
+            // outmsg << m_max_chunk_size;
+            // client->send(outmsg);
         }
         else
         {
             std::cout << "[" << client->getId() << "]: unexpected message from a client. Type = " << static_cast<int>(msg.header.id) << '\n';
         }
-
-        std::cout << "TR#5\n";
     }
 
   protected:
