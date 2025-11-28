@@ -30,11 +30,17 @@ enum class EPayloadType : uint8_t
     File
 };
 
-struct SendRequest
+struct PreMetadata
 {
     EPayloadType payload_type;
     uint8_t code_size;
     std::string code;
+};
+
+struct PostMetadata
+{
+    EPayloadType payload_type;
+    uint32_t max_chunk_size;
 };
 
 } // namespace Common
@@ -42,17 +48,15 @@ struct SendRequest
 
 namespace Net
 {
-// serialize
 template <typename T>
-Message<T> &operator<<(Message<T> &msg, const PingPong::Common::SendRequest &data)
+Message<T> &operator<<(Message<T> &msg, const PingPong::Common::PreMetadata &data)
 {
     msg << data.code << data.code_size << data.payload_type;
     return msg;
 }
 
-// deserialize (note: reverse order)
 template <typename T>
-Message<T> &operator>>(Message<T> &msg, PingPong::Common::SendRequest &data)
+Message<T> &operator>>(Message<T> &msg, PingPong::Common::PreMetadata &data)
 {
     msg >> data.payload_type >> data.code_size;
     data.code.resize(data.code_size);
@@ -60,4 +64,17 @@ Message<T> &operator>>(Message<T> &msg, PingPong::Common::SendRequest &data)
     return msg;
 }
 
+template <typename T>
+Message<T> &operator<<(Message<T> &msg, const PingPong::Common::PostMetadata &data)
+{
+    msg << data.max_chunk_size << data.payload_type;
+    return msg;
+}
+
+template <typename T>
+Message<T> &operator>>(Message<T> &msg, PingPong::Common::PostMetadata &data)
+{
+    msg >> data.payload_type >> data.max_chunk_size;
+    return msg;
+}
 } // namespace Net

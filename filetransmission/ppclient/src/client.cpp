@@ -38,7 +38,7 @@ int main()
             Message msg;
             msg.header.id = Common::EMessageType::Send;
 
-            Common::SendRequest request;
+            Common::PreMetadata request;
             {
                 request.code = "abc";
                 request.code_size = request.code.size();

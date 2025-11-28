@@ -29,41 +29,126 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
   protected:
     bool onClientConnect(ConnectionPtr client) override
     {
+        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
         m_sessions[client] = nullptr;
         return true;
     }
 
     void onClientDisconnect(ConnectionPtr client) override
     {
+        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
         m_sessions.erase(client);
         m_pending_senders.right.erase(client);
     }
 
+    void onSendEstablishment(ConnectionPtr client, Message &&msg)
+    {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
+        m_pending_senders.right.erase(client);
+
+        Common::PreMetadata request;
+        msg >> request;
+        std::cout << "send-request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
+
+        auto it = m_sessions.find(client);
+        if (!(it == m_sessions.end() || it->second == nullptr))
+        {
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Reject;
+            client->send(outmsg);
+            m_pending_senders.right.erase(client);
+            m_sessions.erase(client);
+            return;
+        }
+
+        std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code << '\n';
+        m_pending_senders.insert({request.code, client});
+    }
+
+    void onReceiveEstablishment(ConnectionPtr client, Message &&msg)
+    {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
+
+        Common::PreMetadata request;
+        msg >> request;
+        std::cout << "receive-request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
+
+        auto it = m_pending_senders.find(request.code);
+
+        if (it == m_pending_senders.end())
+        {
+            std::cout << "[" << client->getId() << "]: failed to receive file. Code phrase is invalid\n";
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Reject;
+            client->send(outmsg);
+            return;
+        }
+
+        m_sessions[it->right] = std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, client);
+        Message outmsg;
+        outmsg.header.id = Common::EMessageType::Accept;
+
+        Common::PostMetadata response;
+        response.payload_type = Common::EPayloadType::File;
+        response.max_chunk_size = m_max_chunk_size;
+        outmsg << m_max_chunk_size;
+        client->send(outmsg);
+    }
+
+    void removeSession(ConnectionPtr client)
+    {
+        std::cout << "[" << client->getId() << "]: error in send-session. Aborting\n";
+
+        Message outmsg;
+        outmsg.header.id = Common::EMessageType::Abort;
+        client->send(outmsg);
+        m_sessions[client]->onMessage(std::move(outmsg));
+
+        m_sessions.erase(client);
+    }
+
     void onMessage(ConnectionPtr client, Message &&msg) override
     {
+        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+        std::cout << msg << '\n';
+
         auto it = m_sessions.find(client);
+
+        // If a client has already established a send-session
         if (it != m_sessions.end() && it->second)
         {
+            ServerSession &session = *it->second;
+
+            // FinalChunk: Accept -> Sender , FinalChunk -> Receiver
             if (msg.header.id == Common::EMessageType::FinalChunk)
             {
                 Message outmsg;
                 outmsg.header.id = Common::EMessageType::Accept;
                 client->send(outmsg);
+                session.onMessage(std::move(msg));
 
                 m_sessions.erase(client);
             }
+            // Chunk:
+            // good : Chunk -> Receiver
+            // bad  : Abort -> Sender, Abort -> Receiver
+            else if (msg.header.id == Common::EMessageType::Chunk)
+            {
+                if (msg.size() > m_max_chunk_size)
+                {
+                    std::cout << "[" << client->getId() << "]: exceeded max chunk size\n";
+                    removeSession(client);
+                }
+                else if (!session.onMessage(std::move(msg)))
+                {
+                    std::cout << "[" << client->getId() << "]: message handling went wrong\n";
+                    removeSession(client);
+                }
+            }
+            // Other: Abort -> Sender, Abort -> Receiver
             else
             {
-                if (!it->second->onMessage(std::move(msg)))
-                {
-                    std::cout << "Error in ServerSession. Aborting\n";
-
-                    Message outmsg;
-                    outmsg.header.id = Common::EMessageType::Abort;
-                    client->send(outmsg);
-
-                    m_sessions.erase(client);
-                }
+                removeSession(client);
             }
 
             return;
@@ -71,38 +156,11 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
         if (msg.header.id == Common::EMessageType::Send)
         {
-            m_pending_senders.right.erase(client);
-
-            std::cout << msg << '\n';
-
-            Common::SendRequest request;
-            {
-                request.code = "abc";
-                request.code_size = request.code.size();
-                request.payload_type = Common::EPayloadType::File;
-            }
-
-            msg >> request;
-            std::cout << "request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
-
-            auto it = m_sessions.find(client);
-            if (!(it == m_sessions.end() || it->second == nullptr))
-            {
-                Message outmsg;
-                outmsg.header.id = Common::EMessageType::Reject;
-                client->send(outmsg);
-                m_pending_senders.right.erase(client);
-                m_sessions.erase(client);
-                return;
-            }
-
-            std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code << '\n';
-            m_pending_senders.insert({request.code, client});
-            // std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, clients_file);
-            // Message outmsg;
-            // outmsg.header.id = Common::EMessageType::Accept;
-            // outmsg << m_max_chunk_size;
-            // client->send(outmsg);
+            onSendEstablishment(client, std::move(msg));
+        }
+        else if (msg.header.id == Common::EMessageType::RequestReceive)
+        {
+            onReceiveEstablishment(client, std::move(msg));
         }
         else
         {
