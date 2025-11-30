@@ -141,7 +141,7 @@ class ServerSession : public Session
     using ConnectionPtr = std::shared_ptr<Net::Connection<Common::EMessageType>>;
 
   public:
-    ServerSession(Common::EPayloadType payload_type)
+    ServerSession(const Common::EPayloadType& payload_type)
         : Session(payload_type)
     {
     }
@@ -153,8 +153,11 @@ class ServerSession : public Session
 class ServerOneToOneRetranslatorSession : public ServerSession
 {
   public:
-    ServerOneToOneRetranslatorSession(Common::EPayloadType payload_type, ConnectionPtr sink)
-        : ServerSession(payload_type), m_sink(sink)
+    ServerOneToOneRetranslatorSession(const uint64_t file_size, const uint32_t max_chunk_size, ConnectionPtr sink)
+        : ServerSession(Common::EPayloadType::File)
+        , file_size{file_size}
+        , max_chunk_size{max_chunk_size}
+        , m_sink(sink)
     {
     }
 
@@ -177,6 +180,8 @@ class ServerOneToOneRetranslatorSession : public ServerSession
     }
 
   private:
+    uint64_t file_size;
+    uint32_t max_chunk_size;
     ConnectionPtr m_sink;
 };
 

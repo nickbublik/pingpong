@@ -1,7 +1,7 @@
 #include <bitset>
 #include <iostream>
 #include <limits>
-#include <map>
+#include <unordered_map>
 
 #include <boost/bimap.hpp>
 
@@ -15,6 +15,12 @@ namespace PingPong
 using Message = Net::Message<Common::EMessageType>;
 using ConnectionPtr = std::shared_ptr<Net::Connection<Common::EMessageType>>;
 using SessionUPtr = std::unique_ptr<ServerSession>;
+
+struct TransmissionContext
+{
+    Common::PreMetadata pre_metadata;
+    Common::PostMetadata post_metadata;
+};
 
 class FileServer : public Net::ServerBase<Common::EMessageType>
 {
@@ -39,16 +45,18 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
         m_sessions.erase(client);
         m_pending_senders.right.erase(client);
+        m_pending_transmissions.erase(client);
     }
 
     void onSendEstablishment(ConnectionPtr client, Message &&msg)
     {
         std::cout << __PRETTY_FUNCTION__ << '\n';
         m_pending_senders.right.erase(client);
+        m_pending_transmissions.erase(client);
 
         Common::PreMetadata request;
         msg >> request;
-        std::cout << "send-request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
+        std::cout << "send-request: file_size = " << request.file_size << ", code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
 
         auto it = m_sessions.find(client);
         if (!(it == m_sessions.end() || it->second == nullptr))
@@ -63,6 +71,7 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
         std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code << '\n';
         m_pending_senders.insert({request.code, client});
+        m_pending_transmissions.insert({client, TransmissionContext{request, Common::PostMetadata{}}});
     }
 
     void onReceiveEstablishment(ConnectionPtr client, Message &&msg)
@@ -73,9 +82,9 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         msg >> request;
         std::cout << "receive-request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
 
-        auto it = m_pending_senders.find(request.code);
+        auto it = m_pending_senders.left.find(request.code);
 
-        if (it == m_pending_senders.end())
+        if (it == m_pending_senders.left.end())
         {
             std::cout << "[" << client->getId() << "]: failed to receive file. Code phrase is invalid\n";
             Message outmsg;
@@ -84,15 +93,20 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
             return;
         }
 
-        m_sessions[it->right] = std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, client);
-        Message outmsg;
-        outmsg.header.id = Common::EMessageType::Accept;
+        // m_sessions[it->second] = std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, client);
+        // Message outmsg;
+        // outmsg.header.id = Common::EMessageType::Accept;
 
-        Common::PostMetadata response;
-        response.payload_type = Common::EPayloadType::File;
-        response.max_chunk_size = m_max_chunk_size;
-        outmsg << m_max_chunk_size;
-        client->send(outmsg);
+        // Common::PostMetadata response;
+        // response.payload_type = Common::EPayloadType::File;
+        // response.max_chunk_size = m_max_chunk_size;
+        // outmsg << m_max_chunk_size;
+        // client->send(outmsg);
+    }
+
+    void establishTransmissionSession(ConnectionPtr receiver, Message &&msg)
+    {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
     }
 
     void removeSession(ConnectionPtr client)
@@ -162,6 +176,10 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         {
             onReceiveEstablishment(client, std::move(msg));
         }
+        else if (msg.header.id == Common::EMessageType::Receive)
+        {
+            establishTransmissionSession(client, std::move(msg));
+        }
         else
         {
             std::cout << "[" << client->getId() << "]: unexpected message from a client. Type = " << static_cast<int>(msg.header.id) << '\n';
@@ -170,7 +188,10 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
   protected:
     boost::bimap<std::string, ConnectionPtr> m_pending_senders;
-    std::map<ConnectionPtr, SessionUPtr> m_sessions;
+    std::unordered_map<ConnectionPtr, TransmissionContext> m_pending_transmissions;
+
+    std::unordered_map<ConnectionPtr, SessionUPtr> m_sessions;
+
     uint64_t m_max_chunk_size = 1024;
 };
 

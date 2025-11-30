@@ -33,6 +33,7 @@ enum class EPayloadType : uint8_t
 struct PreMetadata
 {
     EPayloadType payload_type;
+    uint64_t file_size;
     uint8_t code_size;
     std::string code;
 };
@@ -51,14 +52,14 @@ namespace Net
 template <typename T>
 Message<T> &operator<<(Message<T> &msg, const PingPong::Common::PreMetadata &data)
 {
-    msg << data.code << data.code_size << data.payload_type;
+    msg << data.code << data.code_size << data.file_size << data.payload_type;
     return msg;
 }
 
 template <typename T>
 Message<T> &operator>>(Message<T> &msg, PingPong::Common::PreMetadata &data)
 {
-    msg >> data.payload_type >> data.code_size;
+    msg >> data.payload_type >> data.file_size >> data.code_size;
     data.code.resize(data.code_size);
     msg >> data.code;
     return msg;
