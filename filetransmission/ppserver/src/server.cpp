@@ -56,7 +56,9 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
         Common::PreMetadata request;
         msg >> request;
-        std::cout << "send-request: file_size = " << request.file_size << ", code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
+        std::cout << "send-request: file_name = " << request.file_data.file_name
+                  << " file_size = " << request.file_data.file_size
+                  << ", code = " << request.code_phrase.code << '\n';
 
         auto it = m_sessions.find(client);
         if (!(it == m_sessions.end() || it->second == nullptr))
@@ -69,9 +71,10 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
             return;
         }
 
-        std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code << '\n';
-        m_pending_senders.insert({request.code, client});
-        m_pending_transmissions.insert({client, TransmissionContext{request, Common::PostMetadata{}}});
+        std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code_phrase.code << '\n';
+        m_pending_senders.insert({request.code_phrase.code, client});
+        m_pending_transmissions.insert({client,
+                                        TransmissionContext{request, Common::PostMetadata{request.payload_type, m_max_chunk_size, request.code_phrase, request.file_data}}});
     }
 
     void onReceiveEstablishment(ConnectionPtr client, Message &&msg)
@@ -80,9 +83,9 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
         Common::PreMetadata request;
         msg >> request;
-        std::cout << "receive-request: code_size = " << (int)request.code_size << ", code = " << request.code << '\n';
+        std::cout << "receive-request: code = " << request.code_phrase.code << '\n';
 
-        auto it = m_pending_senders.left.find(request.code);
+        auto it = m_pending_senders.left.find(request.code_phrase.code);
 
         if (it == m_pending_senders.left.end())
         {
@@ -93,20 +96,39 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
             return;
         }
 
-        // m_sessions[it->second] = std::make_unique<ServerOneToOneRetranslatorSession>(Common::EPayloadType::File, client);
-        // Message outmsg;
-        // outmsg.header.id = Common::EMessageType::Accept;
+        const Common::PostMetadata &response = m_pending_transmissions[it->second].post_metadata;
 
-        // Common::PostMetadata response;
-        // response.payload_type = Common::EPayloadType::File;
-        // response.max_chunk_size = m_max_chunk_size;
-        // outmsg << m_max_chunk_size;
-        // client->send(outmsg);
+        Message outmsg;
+        outmsg.header.id = Common::EMessageType::Accept;
+        outmsg << response;
+
+        client->send(outmsg);
     }
 
     void establishTransmissionSession(ConnectionPtr receiver, Message &&msg)
     {
         std::cout << __PRETTY_FUNCTION__ << '\n';
+
+        Common::PostMetadata request;
+        msg >> request;
+        std::cout << "establishTransmissionSession: code = " << request.code_phrase.code << '\n';
+
+        auto it = m_pending_senders.left.find(request.code_phrase.code);
+
+        if (it == m_pending_senders.left.end())
+        {
+            std::cout << "[" << receiver->getId() << "]: failed to receive file. Something went wrong\n";
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Abort;
+            receiver->send(outmsg);
+            return;
+        }
+
+        auto sender = it->second;
+
+        std::cout << "Server starts to send files from " << sender->getId() << " to " << receiver->getId() << "TODO...\n";
+        // m_pending_senders.right.erase(client);
+        // m_pending_transmissions.erase(client);
     }
 
     void removeSession(ConnectionPtr client)

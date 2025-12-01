@@ -91,6 +91,8 @@ Operation readArguments(int argc, char **argv)
 
 bool sendRoutine(PingPong::FileClient &c, const Operation &op)
 {
+    std::cout << __PRETTY_FUNCTION__ << '\n';
+
     using namespace PingPong;
 
     uint64_t chunksize;
@@ -103,13 +105,17 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
 
             Common::PreMetadata request;
             {
-                request.code = "abc";
-                request.code_size = request.code.size();
-                request.file_size = fs::file_size(op.file_to_send);
                 request.payload_type = Common::EPayloadType::File;
+
+                request.code_phrase.code = "abc";
+                request.code_phrase.code_size = request.code_phrase.code.size();
+
+                request.file_data.file_name = op.file_to_send.filename();
+                request.file_data.file_name_size = request.file_data.file_name.size();
+                request.file_data.file_size = fs::file_size(op.file_to_send);
             }
 
-            std::cout << request.code << '\n';
+            std::cout << "Code: " << request.code_phrase.code << '\n';
 
             msg << request;
             std::cout << msg << '\n';
@@ -141,7 +147,7 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
     }
 
     std::cout << "Preparing to send file. TODO...\n";
-    return true;
+    std::this_thread::sleep_for(std::chrono::seconds(30));
 
     ClientSenderSession session(Common::EPayloadType::File, c.incoming(), fs::path{"./test.txt"}, chunksize, [&c](Message &&msg)
                                 { c.send(std::move(msg)); });
@@ -168,6 +174,8 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
 
 bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
 {
+    std::cout << __PRETTY_FUNCTION__ << '\n';
+
     using namespace PingPong;
 
     uint64_t chunksize;
@@ -179,9 +187,10 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
 
             Common::PreMetadata request;
             {
-                request.code = op.receival_code_phrase;
-                request.code_size = request.code.size();
                 request.payload_type = Common::EPayloadType::File;
+
+                request.code_phrase.code = op.receival_code_phrase;
+                request.code_phrase.code_size = request.code_phrase.code.size();
             }
 
             msg << request;
@@ -201,9 +210,9 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
             }
             else if (msg.header.id == Common::EMessageType::Accept)
             {
-                Common::PreMetadata request;
-                msg >> request;
-                std::cout << "Do you want to accept an incoming file of size " << request.file_size << "? [y/N]\n";
+                Common::PostMetadata response;
+                msg >> response;
+                std::cout << "Do you want to accept an incoming file \"" << response.file_data.file_name << "\" of size " << response.file_data.file_size << "? [y/N]\n";
                 break;
             }
         }
@@ -225,7 +234,7 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
     }
 
     std::cout << "Preparing to receive file. TODO...\n";
-    return true;
+    std::this_thread::sleep_for(std::chrono::seconds(30));
 
     ClientSenderSession session(Common::EPayloadType::File, c.incoming(), fs::path{"./test.txt"}, chunksize, [&c](Message &&msg)
                                 { c.send(std::move(msg)); });
@@ -280,6 +289,11 @@ int main(int argc, char *argv[])
     {
         std::cerr << "Failed to connect to the server\n";
         return 1;
+    }
+
+    while (!c.isConnected())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     bool result;
