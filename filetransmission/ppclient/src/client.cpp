@@ -154,7 +154,7 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
     bool res = session.mainLoop();
     if (!res)
     {
-        std::cout << "Operation failed\n";
+        std::cout << "Sending routine has failed\n";
         return false;
     }
 
@@ -163,7 +163,7 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
     while (!c.incoming().empty())
     {
         auto msg = c.incoming().pop_front().msg;
-        if (msg.header.id == Common::EMessageType::Accept)
+        if (msg.header.id == Common::EMessageType::Success)
         {
             std::cout << "Server confirmed file receival\n";
         }
@@ -236,25 +236,18 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
     std::cout << "Preparing to receive file. TODO...\n";
     std::this_thread::sleep_for(std::chrono::seconds(30));
 
-    ClientSenderSession session(Common::EPayloadType::File, c.incoming(), fs::path{"./test.txt"}, chunksize, [&c](Message &&msg)
-                                { c.send(std::move(msg)); });
+    std::filesystem::path outfile{"./out.txt"};
+
+    ClientReceiverSession session(Common::EPayloadType::File, c.incoming(), outfile, [&c](Message &&msg)
+                                  { c.send(std::move(msg)); });
     bool res = session.mainLoop();
     if (!res)
     {
-        std::cout << "Operation failed\n";
+        std::cout << "Receiving routine has failed\n";
         return false;
     }
 
-    c.incoming().wait();
-
-    while (!c.incoming().empty())
-    {
-        auto msg = c.incoming().pop_front().msg;
-        if (msg.header.id == Common::EMessageType::Accept)
-        {
-            std::cout << "Server confirmed file receival\n";
-        }
-    }
+    std::cout << "Successfully written into " << outfile << '\n';
 
     return true;
 }

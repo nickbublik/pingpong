@@ -49,10 +49,71 @@ class ClientSession : public Session
 class ClientReceiverSession : public ClientSession
 {
   public:
-    bool mainLoop()
+    ClientReceiverSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const std::function<void(Message &&)> sendcb)
+        : ClientSession(payload_type, messages_in), m_file{file}, m_sendcb{sendcb}
     {
-        return true;
     }
+
+    ~ClientReceiverSession() override
+    {
+    }
+
+    bool mainLoop() override
+    {
+        std::ofstream ofs(m_file, std::ios::out | std::ios::binary);
+
+        if (!ofs.is_open())
+        {
+            std::cerr << "Error opening file: " << m_file << std::endl;
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Abort;
+            m_sendcb(std::move(outmsg));
+
+            return false;
+        }
+
+        bool op_result = true;
+
+        while (ofs)
+        {
+            // Check for incoming messages from a server
+            while (!m_messages_in.empty())
+            {
+                auto msg = m_messages_in.pop_front().msg;
+                if (msg.header.id == Common::EMessageType::Abort)
+                {
+                    std::cout << "Abort command from the server\n";
+                    op_result = false;
+                    break;
+                }
+                else if (msg.header.id == Common::EMessageType::Chunk)
+                {
+                    std::cout << "Incoming chunk of size " << msg.size() << '\n';
+                    ofs.write(reinterpret_cast<const char *>(msg.body.data()), msg.size());
+                }
+                else if (msg.header.id == Common::EMessageType::FinalChunk)
+                {
+                    std::cout << "End of transmission. Finishing." << '\n';
+                    break;
+                }
+                else
+                {
+                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
+                }
+            }
+
+            if (!op_result)
+                break;
+        }
+
+        ofs.close();
+
+        return op_result;
+    }
+
+  private:
+    const std::filesystem::path m_file;
+    std::function<void(Message &&)> m_sendcb;
 };
 
 class ClientSenderSession : public ClientSession
@@ -96,7 +157,7 @@ class ClientSenderSession : public ClientSession
                 }
                 else
                 {
-                    std::cout << "Skipped strange message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
+                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
                 }
             }
 
@@ -141,7 +202,7 @@ class ServerSession : public Session
     using ConnectionPtr = std::shared_ptr<Net::Connection<Common::EMessageType>>;
 
   public:
-    ServerSession(const Common::EPayloadType& payload_type)
+    ServerSession(const Common::EPayloadType &payload_type)
         : Session(payload_type)
     {
     }
@@ -154,10 +215,7 @@ class ServerOneToOneRetranslatorSession : public ServerSession
 {
   public:
     ServerOneToOneRetranslatorSession(const uint64_t file_size, const uint32_t max_chunk_size, ConnectionPtr sink)
-        : ServerSession(Common::EPayloadType::File)
-        , file_size{file_size}
-        , max_chunk_size{max_chunk_size}
-        , m_sink(sink)
+        : ServerSession(Common::EPayloadType::File), file_size{file_size}, max_chunk_size{max_chunk_size}, m_sink(sink)
     {
     }
 
@@ -167,7 +225,7 @@ class ServerOneToOneRetranslatorSession : public ServerSession
 
     bool onMessage(Message &&msg) override
     {
-        if (msg.header.id == Common::EMessageType::Chunk)
+        if (msg.header.id == Common::EMessageType::Chunk || msg.header.id == Common::EMessageType::FinalChunk)
         {
             m_sink->send(std::move(msg));
         }

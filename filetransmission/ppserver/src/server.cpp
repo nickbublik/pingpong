@@ -127,8 +127,6 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         auto sender = it->second;
 
         std::cout << "Server starts to send files from " << sender->getId() << " to " << receiver->getId() << "TODO...\n";
-        // m_pending_senders.right.erase(client);
-        // m_pending_transmissions.erase(client);
     }
 
     void removeSession(ConnectionPtr client)
@@ -155,14 +153,13 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         {
             ServerSession &session = *it->second;
 
-            // FinalChunk: Accept -> Sender , FinalChunk -> Receiver
+            // FinalChunk: Success -> Sender , FinalChunk -> Receiver
             if (msg.header.id == Common::EMessageType::FinalChunk)
             {
-                Message outmsg;
-                outmsg.header.id = Common::EMessageType::Accept;
-                client->send(outmsg);
+                // Message outmsg;
+                // outmsg.header.id = Common::EMessageType::Success;
+                // client->send(outmsg);
                 session.onMessage(std::move(msg));
-
                 m_sessions.erase(client);
             }
             // Chunk:
@@ -211,10 +208,9 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
   protected:
     boost::bimap<std::string, ConnectionPtr> m_pending_senders;
     std::unordered_map<ConnectionPtr, TransmissionContext> m_pending_transmissions;
-
     std::unordered_map<ConnectionPtr, SessionUPtr> m_sessions;
 
-    uint64_t m_max_chunk_size = 1024;
+    uint64_t m_max_chunk_size = 512;
 };
 
 } // namespace PingPong

@@ -15,6 +15,8 @@ enum class EMessageType : uint32_t
     // Server replies
     Accept,
     Reject,
+    // Server and Client replies
+    Success,
     Abort,
     // File transmission control
     Send,
