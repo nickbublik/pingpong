@@ -60,6 +60,7 @@ class ClientReceiverSession : public ClientSession
 
     bool mainLoop() override
     {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
         std::ofstream ofs(m_file, std::ios::out | std::ios::binary);
 
         if (!ofs.is_open())
@@ -130,6 +131,7 @@ class ClientSenderSession : public ClientSession
 
     bool mainLoop() override
     {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
         if (!std::filesystem::exists(m_file))
         {
             std::cout << "File " << m_file << " doesn't exist\n";
@@ -172,6 +174,8 @@ class ClientSenderSession : public ClientSession
                 msg.header.id = Common::EMessageType::FinalChunk;
                 msg.header.size = 0;
                 msg.body.clear();
+
+                std::cout << "Sending FinalChunk\n";
                 m_sendcb(std::move(msg));
                 break;
             }
@@ -180,6 +184,8 @@ class ClientSenderSession : public ClientSession
                 msg.header.id = Common::EMessageType::Chunk;
                 msg.body.resize(static_cast<size_t>(n));
                 msg.header.size = msg.body.size();
+
+                std::cout << "Sending Chunk of size " << msg.size() << '\n';
             }
 
             m_sendcb(std::move(msg));
@@ -225,16 +231,15 @@ class ServerOneToOneRetranslatorSession : public ServerSession
 
     bool onMessage(Message &&msg) override
     {
+        std::cout << __PRETTY_FUNCTION__ << " msg: " << msg << '\n';
+
         if (msg.header.id == Common::EMessageType::Chunk || msg.header.id == Common::EMessageType::FinalChunk)
         {
             m_sink->send(std::move(msg));
-        }
-        else
-        {
-            return false;
+            return true;
         }
 
-        return true;
+        return false;
     }
 
   private:

@@ -146,11 +146,9 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
         }
     }
 
-    std::cout << "Preparing to send file. TODO...\n";
-    std::this_thread::sleep_for(std::chrono::seconds(30));
-
     ClientSenderSession session(Common::EPayloadType::File, c.incoming(), fs::path{"./test.txt"}, chunksize, [&c](Message &&msg)
                                 { c.send(std::move(msg)); });
+
     bool res = session.mainLoop();
     if (!res)
     {
@@ -228,13 +226,15 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
 
     {
         Message msg;
+        Common::CodePhrase code_phrase;
+        code_phrase.code = op.receival_code_phrase;
+        code_phrase.code_size = code_phrase.code.size();
+
         msg.header.id = Common::EMessageType::Receive;
+        msg << code_phrase;
         std::cout << msg << '\n';
         c.send(std::move(msg));
     }
-
-    std::cout << "Preparing to receive file. TODO...\n";
-    std::this_thread::sleep_for(std::chrono::seconds(30));
 
     std::filesystem::path outfile{"./out.txt"};
 
