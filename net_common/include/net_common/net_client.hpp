@@ -63,6 +63,12 @@ class ClientBase
             return false;
     }
 
+    void flush()
+    {
+        if (isConnected())
+            m_connection->waitForSendQueueEmpty();
+    }
+
     void send(const Message<T> &msg)
     {
         if (isConnected())

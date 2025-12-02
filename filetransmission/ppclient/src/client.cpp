@@ -139,7 +139,9 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
             }
             else if (msg.header.id == Common::EMessageType::Accept)
             {
-                msg >> chunksize;
+                Common::PostMetadata post_metadata;
+                msg >> post_metadata;
+                chunksize = post_metadata.max_chunk_size;
                 std::cout << "Server accepted sending a file with max chunksize of " << chunksize << " bytes\n";
                 break;
             }
@@ -156,14 +158,23 @@ bool sendRoutine(PingPong::FileClient &c, const Operation &op)
         return false;
     }
 
-    c.incoming().wait();
+    std::cout << __PRETTY_FUNCTION__ << " waiting for Success message" << '\n';
 
-    while (!c.incoming().empty())
+    bool success_from_receiver = false;
+
+    while (!success_from_receiver)
     {
-        auto msg = c.incoming().pop_front().msg;
-        if (msg.header.id == Common::EMessageType::Success)
+        c.incoming().wait();
+
+        while (!c.incoming().empty())
         {
-            std::cout << "Server confirmed file receival\n";
+            auto msg = c.incoming().pop_front().msg;
+            if (msg.header.id == Common::EMessageType::Success)
+            {
+                std::cout << "Server confirmed file receival\n";
+                success_from_receiver = true;
+                break;
+            }
         }
     }
 
@@ -247,7 +258,16 @@ bool receiveRoutine(PingPong::FileClient &c, const Operation &op)
         return false;
     }
 
-    std::cout << "Successfully written into " << outfile << '\n';
+    // Signal about the successful end of transmission
+    {
+        Message msg;
+        msg.header.id = Common::EMessageType::Success;
+        Common::CodePhrase code_phrase;
+        code_phrase.code = op.receival_code_phrase;
+        code_phrase.code_size = code_phrase.code.size();
+        msg << code_phrase;
+        c.send(std::move(msg));
+    }
 
     return true;
 }
@@ -278,6 +298,7 @@ int main(int argc, char *argv[])
 
     PingPong::FileClient c;
     bool connected = c.connect("127.0.0.1", 60000);
+
     if (!connected)
     {
         std::cerr << "Failed to connect to the server\n";
@@ -298,6 +319,9 @@ int main(int argc, char *argv[])
     else if (op.type == EOperationType::Receive)
     {
         result = receiveRoutine(c, op);
+        std::cout << "Before flush\n";
+        c.flush();
+        std::cout << "After flush\n";
     }
 
     return !result;

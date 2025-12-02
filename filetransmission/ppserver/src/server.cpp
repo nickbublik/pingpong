@@ -248,7 +248,35 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         ServerSession &session = *session_ptr;
         m_storage.addSession(sender, receiver, std::move(session_ptr));
 
+        {
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Accept;
+            outmsg << (*context).post_metadata;
+            sender->send(outmsg);
+        }
+
         std::cout << "Server starts to send files from " << sender->getId() << " to " << receiver->getId() << '\n';
+    }
+
+    void finishSession(const Common::CodePhrase &code_phrase)
+    {
+        std::cout << __PRETTY_FUNCTION__ << " session of phrase = " << code_phrase.code << '\n';
+        ConnectionPtr sender = m_storage.getSenderByCode(code_phrase.code);
+
+        if (sender)
+        {
+            Message outmsg;
+            outmsg.header.id = Common::EMessageType::Success;
+            std::cout << "Sending Success to the sender\n";
+            sender->send(outmsg);
+
+            m_storage.removePendingSender(sender);
+            m_storage.removeSession(sender);
+        }
+        else
+        {
+            std::cout << __PRETTY_FUNCTION__ << " session was not found\n";
+        }
     }
 
     void removeSessionAbruptly(ConnectionPtr client)
@@ -276,6 +304,39 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         m_storage.removeSession(client);
     }
 
+    void onSessionedMessage(ConnectionPtr client, ServerSession *session, Message &&msg)
+    {
+        // FinalChunk: Success -> Sender , FinalChunk -> Receiver
+        if (msg.header.id == Common::EMessageType::FinalChunk)
+        {
+            // Message outmsg;
+            // outmsg.header.id = Common::EMessageType::Success;
+            // client->send(outmsg);
+            session->onMessage(std::move(msg));
+        }
+        // Chunk:
+        // good : Chunk -> Receiver
+        // bad  : Abort -> Sender, Abort -> Receiver
+        else if (msg.header.id == Common::EMessageType::Chunk)
+        {
+            if (msg.size() > m_max_chunk_size)
+            {
+                std::cout << "[" << client->getId() << "]: exceeded max chunk size\n";
+                removeSessionAbruptly(client);
+            }
+            else if (!session->onMessage(std::move(msg)))
+            {
+                std::cout << "[" << client->getId() << "]: message handling went wrong\n";
+                removeSessionAbruptly(client);
+            }
+        }
+        // Other: Abort -> Sender, Abort -> Receiver
+        else
+        {
+            removeSessionAbruptly(client);
+        }
+    }
+
     void onMessage(ConnectionPtr client, Message &&msg) override
     {
         std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
@@ -286,38 +347,7 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         // If a client has already established a send-session
         if (session)
         {
-            // FinalChunk: Success -> Sender , FinalChunk -> Receiver
-            if (msg.header.id == Common::EMessageType::FinalChunk)
-            {
-                // Message outmsg;
-                // outmsg.header.id = Common::EMessageType::Success;
-                // client->send(outmsg);
-                session->onMessage(std::move(msg));
-                m_storage.removeSession(client);
-                m_storage.removePendingSender(client);
-            }
-            // Chunk:
-            // good : Chunk -> Receiver
-            // bad  : Abort -> Sender, Abort -> Receiver
-            else if (msg.header.id == Common::EMessageType::Chunk)
-            {
-                if (msg.size() > m_max_chunk_size)
-                {
-                    std::cout << "[" << client->getId() << "]: exceeded max chunk size\n";
-                    removeSessionAbruptly(client);
-                }
-                else if (!session->onMessage(std::move(msg)))
-                {
-                    std::cout << "[" << client->getId() << "]: message handling went wrong\n";
-                    removeSessionAbruptly(client);
-                }
-            }
-            // Other: Abort -> Sender, Abort -> Receiver
-            else
-            {
-                removeSessionAbruptly(client);
-            }
-
+            onSessionedMessage(client, session, std::move(msg));
             return;
         }
 
@@ -332,6 +362,14 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         else if (msg.header.id == Common::EMessageType::Receive)
         {
             establishTransmissionSession(client, std::move(msg));
+        }
+        else if (msg.header.id == Common::EMessageType::Success)
+        {
+            std::cout << "on Success message\n";
+            std::cout << msg << '\n';
+            Common::CodePhrase code_phrase;
+            msg >> code_phrase;
+            finishSession(code_phrase);
         }
         else
         {

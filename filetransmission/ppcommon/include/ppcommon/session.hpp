@@ -74,9 +74,12 @@ class ClientReceiverSession : public ClientSession
         }
 
         bool op_result = true;
+        bool finish = false;
 
-        while (ofs)
+        while (ofs && !finish && op_result)
         {
+            m_messages_in.wait();
+
             // Check for incoming messages from a server
             while (!m_messages_in.empty())
             {
@@ -95,6 +98,7 @@ class ClientReceiverSession : public ClientSession
                 else if (msg.header.id == Common::EMessageType::FinalChunk)
                 {
                     std::cout << "End of transmission. Finishing." << '\n';
+                    finish = true;
                     break;
                 }
                 else
@@ -102,9 +106,6 @@ class ClientReceiverSession : public ClientSession
                     std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
                 }
             }
-
-            if (!op_result)
-                break;
         }
 
         ofs.close();
@@ -145,7 +146,7 @@ class ClientSenderSession : public ClientSession
 
         bool op_result = true;
 
-        while (ifs)
+        while (ifs && op_result)
         {
             // Check for incoming messages from a server
             while (!m_messages_in.empty())

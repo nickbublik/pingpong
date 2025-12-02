@@ -84,8 +84,18 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                           {
                             bool already_writing = !m_messages_out.empty();
                             m_messages_out.push_back(std::move(msg));
+
+                            ++m_pending_writes;
+
                             if (!already_writing)
                                 writeHeader(); });
+    }
+
+    void waitForSendQueueEmpty()
+    {
+        std::unique_lock<std::mutex> lk(m_flush_mutex);
+        m_flush_cv.wait(lk, [this]
+                        { return m_pending_writes == 0 && m_messages_out.empty(); });
     }
 
   private:
@@ -104,6 +114,14 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                          else
                                          {
                                              m_messages_out.pop_front();
+
+                                             {
+                                                 std::lock_guard<std::mutex> lk(m_flush_mutex);
+                                                 if (m_pending_writes > 0)
+                                                     --m_pending_writes;
+                                                 if (m_pending_writes == 0)
+                                                     m_flush_cv.notify_all();
+                                             }
 
                                              if (!m_messages_out.empty())
                                              {
@@ -127,6 +145,14 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                      if (!ec)
                                      {
                                          m_messages_out.pop_front();
+
+                                         {
+                                             std::lock_guard<std::mutex> lk(m_flush_mutex);
+                                             if (m_pending_writes > 0)
+                                                 --m_pending_writes;
+                                             if (m_pending_writes == 0)
+                                                 m_flush_cv.notify_all();
+                                         }
 
                                          if (!m_messages_out.empty())
                                          {
@@ -202,5 +228,9 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     Message<T> m_forming_in_message;
     EOwner m_owner_type = EOwner::Server;
     uint32_t m_id = 0;
+
+    std::mutex m_flush_mutex;
+    std::condition_variable m_flush_cv;
+    std::size_t m_pending_writes = 0;
 };
 } // namespace Net
