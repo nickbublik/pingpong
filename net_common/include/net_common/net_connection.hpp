@@ -85,10 +85,19 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                             bool already_writing = !m_messages_out.empty();
                             m_messages_out.push_back(std::move(msg));
 
-                            ++m_pending_writes;
+                            {
+                                std::lock_guard<std::mutex> lk(m_flush_mutex);
+                                ++m_pending_writes;
+                            }
 
                             if (!already_writing)
                                 writeHeader(); });
+    }
+
+    size_t getPendingWrites() const
+    {
+        std::lock_guard<std::mutex> lk(m_flush_mutex);
+        return m_pending_writes;
     }
 
     void waitForSendQueueEmpty()
@@ -229,8 +238,8 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     EOwner m_owner_type = EOwner::Server;
     uint32_t m_id = 0;
 
-    std::mutex m_flush_mutex;
+    mutable std::mutex m_flush_mutex;
     std::condition_variable m_flush_cv;
-    std::size_t m_pending_writes = 0;
+    size_t m_pending_writes = 0;
 };
 } // namespace Net

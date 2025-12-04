@@ -20,7 +20,9 @@ project(ppclient
 )
 
 add_executable(${PROJECT_NAME}
-    src/client.cpp
+    src/receiver.cpp
+    src/sender.cpp
+    src/main.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

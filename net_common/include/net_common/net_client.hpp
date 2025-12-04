@@ -69,6 +69,14 @@ class ClientBase
             m_connection->waitForSendQueueEmpty();
     }
 
+    size_t getPendingWrites() const
+    {
+        if (isConnected())
+            return m_connection->getPendingWrites();
+
+        return 0;
+    }
+
     void send(const Message<T> &msg)
     {
         if (isConnected())

@@ -306,6 +306,8 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
     void onSessionedMessage(ConnectionPtr client, ServerSession *session, Message &&msg)
     {
+        std::cout << __PRETTY_FUNCTION__ << '\n';
+
         // FinalChunk: Success -> Sender , FinalChunk -> Receiver
         if (msg.header.id == Common::EMessageType::FinalChunk)
         {
@@ -340,7 +342,6 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
     void onMessage(ConnectionPtr client, Message &&msg) override
     {
         std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
-        std::cout << msg << '\n';
 
         ServerSession *session = m_storage.getSessionBySender(client);
 

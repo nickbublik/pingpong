@@ -170,17 +170,7 @@ class ClientSenderSession : public ClientSession
             ifs.read(reinterpret_cast<char *>(msg.body.data()), msg.body.size());
             const std::streamsize n = ifs.gcount();
 
-            if (n <= 0)
-            {
-                msg.header.id = Common::EMessageType::FinalChunk;
-                msg.header.size = 0;
-                msg.body.clear();
-
-                std::cout << "Sending FinalChunk\n";
-                m_sendcb(std::move(msg));
-                break;
-            }
-            else
+            if (n > 0)
             {
                 msg.header.id = Common::EMessageType::Chunk;
                 msg.body.resize(static_cast<size_t>(n));
@@ -188,9 +178,19 @@ class ClientSenderSession : public ClientSession
 
                 std::cout << "Sending Chunk of size " << msg.size() << '\n';
             }
+            else
+            {
+                break;
+            }
 
             m_sendcb(std::move(msg));
         }
+
+        std::cout << "Sending FinalChunk\n";
+        msg.header.id = Common::EMessageType::FinalChunk;
+        msg.header.size = 0;
+        msg.body.clear();
+        m_sendcb(std::move(msg));
 
         ifs.close();
 
@@ -232,7 +232,7 @@ class ServerOneToOneRetranslatorSession : public ServerSession
 
     bool onMessage(Message &&msg) override
     {
-        std::cout << __PRETTY_FUNCTION__ << " msg: " << msg << '\n';
+        std::cout << __PRETTY_FUNCTION__ << " msg type: " << (int)msg.header.id << '\n';
 
         if (msg.header.id == Common::EMessageType::Chunk || msg.header.id == Common::EMessageType::FinalChunk)
         {
