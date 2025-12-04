@@ -80,15 +80,15 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
   public:
     void send(const Message<T> msg)
     {
+        {
+            std::lock_guard<std::mutex> lk(m_flush_mutex);
+            ++m_pending_writes;
+        }
+
         boost::asio::post(m_asio_context, [this, msg = std::move(msg)]()
                           {
                             bool already_writing = !m_messages_out.empty();
                             m_messages_out.push_back(std::move(msg));
-
-                            {
-                                std::lock_guard<std::mutex> lk(m_flush_mutex);
-                                ++m_pending_writes;
-                            }
 
                             if (!already_writing)
                                 writeHeader(); });

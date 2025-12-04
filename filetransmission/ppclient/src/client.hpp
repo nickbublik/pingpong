@@ -9,7 +9,7 @@
 
 namespace PingPong
 {
-using Message = Net::Message<Common::EMessageType>;
+using Message = Common::Message;
 
 class FileClient : public Net::ClientBase<Common::EMessageType>
 {

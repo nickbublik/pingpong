@@ -4,6 +4,8 @@
 
 namespace PingPong
 {
+using namespace Common;
+
 bool sendRoutine(const Operation &op)
 {
     std::cout << __PRETTY_FUNCTION__ << '\n';
@@ -18,26 +20,22 @@ bool sendRoutine(const Operation &op)
     {
         try
         {
-            Message msg;
-            msg.header.id = Common::EMessageType::Send;
-
-            Common::PreMetadata request;
+            PreMetadata pre;
             {
-                request.payload_type = Common::EPayloadType::File;
+                pre.payload_type = EPayloadType::File;
 
-                request.code_phrase.code = "abc";
-                request.code_phrase.code_size = request.code_phrase.code.size();
+                pre.code_phrase.code = "abc";
+                pre.code_phrase.code_size = pre.code_phrase.code.size();
 
-                request.file_data.file_name = op.filepath.filename();
-                request.file_data.file_name_size = request.file_data.file_name.size();
-                request.file_data.file_size = fs::file_size(op.filepath);
+                pre.file_data.file_name = op.filepath.filename();
+                pre.file_data.file_name_size = pre.file_data.file_name.size();
+                pre.file_data.file_size = fs::file_size(op.filepath);
             }
+            Message send_msg = encode<EMessageType::Send>(pre);
 
-            std::cout << "Code: " << request.code_phrase.code << '\n';
+            std::cout << "Code: " << pre.code_phrase.code << '\n';
 
-            msg << request;
-            std::cout << msg << '\n';
-            c.send(std::move(msg));
+            c.send(std::move(send_msg));
         }
         catch (const fs::filesystem_error &e)
         {
@@ -50,15 +48,14 @@ bool sendRoutine(const Operation &op)
         while (!c.incoming().empty())
         {
             auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == Common::EMessageType::Reject)
+            if (msg.header.id == EMessageType::Reject)
             {
                 std::cout << "Server forbids sending a file\n";
                 return false;
             }
-            else if (msg.header.id == Common::EMessageType::Accept)
+            else if (msg.header.id == EMessageType::Accept)
             {
-                Common::PostMetadata post_metadata;
-                msg >> post_metadata;
+                PostMetadata post_metadata = decode<EMessageType::Accept>(msg);
                 chunksize = post_metadata.max_chunk_size;
                 std::cout << "Server accepted sending a file with max chunksize of " << chunksize << " bytes\n";
                 break;
@@ -66,7 +63,7 @@ bool sendRoutine(const Operation &op)
         }
     }
 
-    ClientSenderSession session(Common::EPayloadType::File, c.incoming(), op.filepath, chunksize, [&c](Message &&msg)
+    ClientSenderSession session(EPayloadType::File, c.incoming(), op.filepath, chunksize, [&c](Message &&msg)
                                 { c.send(std::move(msg)); });
 
     bool res = session.mainLoop();
@@ -87,7 +84,7 @@ bool sendRoutine(const Operation &op)
         while (!c.incoming().empty())
         {
             auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == Common::EMessageType::Success)
+            if (msg.header.id == EMessageType::Success)
             {
                 std::cout << "Server confirmed file receival\n";
                 success_from_receiver = true;

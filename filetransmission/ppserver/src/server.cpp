@@ -13,14 +13,14 @@
 namespace PingPong
 {
 
-using Message = Net::Message<Common::EMessageType>;
-using ConnectionPtr = std::shared_ptr<Net::Connection<Common::EMessageType>>;
+using namespace Common;
+using ConnectionPtr = std::shared_ptr<Net::Connection<EMessageType>>;
 using SessionUPtr = std::unique_ptr<ServerSession>;
 
 struct TransmissionContext
 {
-    Common::PreMetadata pre_metadata;
-    Common::PostMetadata post_metadata;
+    PreMetadata pre_metadata;
+    PostMetadata post_metadata;
 };
 
 class ClientStorage
@@ -32,15 +32,15 @@ class ClientStorage
         m_pending_transmissions.erase(sender);
     }
 
-    void addPendingSender(ConnectionPtr sender, const uint64_t max_chunk_size, const Common::PreMetadata &pre_metadata)
+    void addPendingSender(ConnectionPtr sender, const uint64_t max_chunk_size, const PreMetadata &pre_metadata)
     {
         m_pending_phrase_senders.insert({sender, pre_metadata.code_phrase.code});
         m_pending_transmissions.insert({sender,
                                         TransmissionContext{pre_metadata,
-                                                            Common::PostMetadata{pre_metadata.payload_type,
-                                                                                 max_chunk_size,
-                                                                                 pre_metadata.code_phrase,
-                                                                                 pre_metadata.file_data}}});
+                                                            PostMetadata{pre_metadata.payload_type,
+                                                                         max_chunk_size,
+                                                                         pre_metadata.code_phrase,
+                                                                         pre_metadata.file_data}}});
     }
 
     std::optional<std::string> getCodeBySender(ConnectionPtr sender) const
@@ -128,11 +128,11 @@ class ClientStorage
     std::unordered_map<ConnectionPtr, SessionUPtr> m_sessions;                      // sender -> session
 };
 
-class FileServer : public Net::ServerBase<Common::EMessageType>
+class FileServer : public Net::ServerBase<EMessageType>
 {
   public:
     FileServer(uint16_t port)
-        : Net::ServerBase<Common::EMessageType>(port)
+        : Net::ServerBase<EMessageType>(port)
     {
     }
 
@@ -157,31 +157,29 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         std::cout << __PRETTY_FUNCTION__ << '\n';
         m_storage.removePendingSender(client);
 
-        Common::PreMetadata request;
-        msg >> request;
-        std::cout << "send-request: file_name = " << request.file_data.file_name
-                  << " file_size = " << request.file_data.file_size
-                  << ", code = " << request.code_phrase.code << '\n';
+        PreMetadata pre = decode<EMessageType::Send>(msg);
+        std::cout << "send-request: file_name = " << pre.file_data.file_name
+                  << " file_size = " << pre.file_data.file_size
+                  << ", code = " << pre.code_phrase.code << '\n';
 
         if (m_storage.getSessionBySender(client) != nullptr)
         {
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Reject;
-            client->send(outmsg);
+            Message reject_msg = encode<EMessageType::Reject>(Empty{});
+            client->send(reject_msg);
 
             m_storage.removeSession(client);
             m_storage.removePendingSender(client);
         }
 
-        std::cout << "[" << client->getId() << "]: new pending sender with code = " << request.code_phrase.code << '\n';
-        m_storage.addPendingSender(client, m_max_chunk_size, request);
+        std::cout << "[" << client->getId() << "]: new pending sender with code = " << pre.code_phrase.code << '\n';
+        m_storage.addPendingSender(client, m_max_chunk_size, pre);
     }
 
     void onReceiveEstablishment(ConnectionPtr client, Message &&msg)
     {
         std::cout << __PRETTY_FUNCTION__ << '\n';
 
-        Common::PreMetadata request;
+        PreMetadata request;
         msg >> request;
         std::cout << "receive-request: code = " << request.code_phrase.code << '\n';
 
@@ -190,9 +188,8 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         if (!sender)
         {
             std::cout << "[" << client->getId() << "]: failed to find a valid sender. Code phrase is invalid\n";
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Reject;
-            client->send(outmsg);
+            Message reject_msg = encode<EMessageType::Reject>(Empty{});
+            client->send(reject_msg);
             return;
         }
 
@@ -201,26 +198,21 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         if (!opt_context)
         {
             std::cout << "[" << client->getId() << "]: failed to find sender's context. \n";
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Reject;
-            client->send(outmsg);
+            Message reject_msg = encode<EMessageType::Reject>(Empty{});
+            client->send(reject_msg);
             return;
         }
 
-        const Common::PostMetadata &response = (*opt_context).post_metadata;
-
-        Message outmsg;
-        outmsg.header.id = Common::EMessageType::Accept;
-        outmsg << response;
-
-        client->send(outmsg);
+        const PostMetadata &response = (*opt_context).post_metadata;
+        Message accept_msg = encode<EMessageType::Accept>(response);
+        client->send(accept_msg);
     }
 
     void establishTransmissionSession(ConnectionPtr receiver, Message &&msg)
     {
         std::cout << __PRETTY_FUNCTION__ << '\n';
 
-        Common::CodePhrase request;
+        CodePhrase request;
         msg >> request;
         std::cout << "establishTransmissionSession: code = " << request.code << '\n';
 
@@ -229,9 +221,8 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         if (!sender)
         {
             std::cout << "[" << receiver->getId() << "]: failed to receive file. Something went wrong\n";
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Abort;
-            receiver->send(outmsg);
+            Message abort_msg = encode<EMessageType::Abort>(Empty{});
+            receiver->send(abort_msg);
             return;
         }
 
@@ -248,27 +239,21 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         ServerSession &session = *session_ptr;
         m_storage.addSession(sender, receiver, std::move(session_ptr));
 
-        {
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Accept;
-            outmsg << (*context).post_metadata;
-            sender->send(outmsg);
-        }
+        Message accept_msg = encode<EMessageType::Accept>((*context).post_metadata);
+        sender->send(accept_msg);
 
         std::cout << "Server starts to send files from " << sender->getId() << " to " << receiver->getId() << '\n';
     }
 
-    void finishSession(const Common::CodePhrase &code_phrase)
+    void finishSession(ConnectionPtr receiver)
     {
-        std::cout << __PRETTY_FUNCTION__ << " session of phrase = " << code_phrase.code << '\n';
-        ConnectionPtr sender = m_storage.getSenderByCode(code_phrase.code);
+        ConnectionPtr sender = m_storage.getSenderByReceiver(receiver);
 
         if (sender)
         {
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Success;
             std::cout << "Sending Success to the sender\n";
-            sender->send(outmsg);
+            Message success_msg = encode<EMessageType::Success>(Empty{});
+            sender->send(success_msg);
 
             m_storage.removePendingSender(sender);
             m_storage.removeSession(sender);
@@ -295,9 +280,8 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
 
         if (session)
         {
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Abort;
-            session->onMessage(std::move(outmsg));
+            Message abort_msg = encode<EMessageType::Abort>(Empty{});
+            session->onMessage(std::move(abort_msg));
         }
 
         m_storage.removePendingSender(client);
@@ -309,17 +293,14 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
         std::cout << __PRETTY_FUNCTION__ << '\n';
 
         // FinalChunk: Success -> Sender , FinalChunk -> Receiver
-        if (msg.header.id == Common::EMessageType::FinalChunk)
+        if (msg.header.id == EMessageType::FinalChunk)
         {
-            // Message outmsg;
-            // outmsg.header.id = Common::EMessageType::Success;
-            // client->send(outmsg);
             session->onMessage(std::move(msg));
         }
         // Chunk:
         // good : Chunk -> Receiver
         // bad  : Abort -> Sender, Abort -> Receiver
-        else if (msg.header.id == Common::EMessageType::Chunk)
+        else if (msg.header.id == EMessageType::Chunk)
         {
             if (msg.size() > m_max_chunk_size)
             {
@@ -352,25 +333,33 @@ class FileServer : public Net::ServerBase<Common::EMessageType>
             return;
         }
 
-        if (msg.header.id == Common::EMessageType::Send)
+        if (msg.header.id == EMessageType::Send)
         {
             onSendEstablishment(client, std::move(msg));
         }
-        else if (msg.header.id == Common::EMessageType::RequestReceive)
+        else if (msg.header.id == EMessageType::RequestReceive)
         {
             onReceiveEstablishment(client, std::move(msg));
         }
-        else if (msg.header.id == Common::EMessageType::Receive)
+        else if (msg.header.id == EMessageType::Receive)
         {
             establishTransmissionSession(client, std::move(msg));
         }
-        else if (msg.header.id == Common::EMessageType::Success)
+        else if (msg.header.id == EMessageType::FinishReceive)
         {
-            std::cout << "on Success message\n";
+            std::cout << "on FinishReceive message\n";
+            finishSession(client);
+        }
+        else if (msg.header.id == EMessageType::FailedReceive)
+        {
+            std::cout << "on FailedReceive message\n";
             std::cout << msg << '\n';
-            Common::CodePhrase code_phrase;
-            msg >> code_phrase;
-            finishSession(code_phrase);
+            ConnectionPtr sender = m_storage.getSenderByReceiver(client);
+
+            if (sender)
+            {
+                removeSessionAbruptly(sender);
+            }
         }
         else
         {

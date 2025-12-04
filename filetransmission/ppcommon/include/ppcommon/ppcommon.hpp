@@ -10,23 +10,6 @@ namespace PingPong
 namespace Common
 {
 
-enum class EMessageType : uint32_t
-{
-    // Server replies
-    Accept,
-    Reject,
-    // Server and Client replies
-    Success,
-    Abort,
-    // File transmission control
-    Send,
-    RequestReceive,
-    Receive,
-    // File transmission process
-    Chunk,
-    FinalChunk
-};
-
 enum class EPayloadType : uint8_t
 {
     File
@@ -58,6 +41,10 @@ struct PostMetadata
     uint64_t max_chunk_size;
     CodePhrase code_phrase;
     FileData file_data;
+};
+
+struct Empty
+{
 };
 
 } // namespace Common
@@ -126,3 +113,119 @@ Message<T> &operator>>(Message<T> &msg, PingPong::Common::PostMetadata &data)
     return msg;
 }
 } // namespace Net
+
+namespace PingPong
+{
+namespace Common
+{
+enum class EMessageType : uint32_t
+{
+    // Server replies
+    Accept,
+    Reject,
+    // Server and Client replies
+    Success,
+    Abort,
+    // File transmission control
+    Send,
+    RequestReceive,
+    FinishReceive,
+    FailedReceive,
+    Receive,
+    // File transmission process
+    Chunk,
+    FinalChunk
+};
+
+using Buffer = std::vector<uint8_t>;
+
+template <EMessageType M>
+struct Payload;
+
+template <>
+struct Payload<EMessageType::Accept>
+{
+    using Type = PostMetadata;
+};
+
+template <>
+struct Payload<EMessageType::Reject>
+{
+    using Type = Empty;
+};
+
+template <>
+struct Payload<EMessageType::Success>
+{
+    using Type = Empty;
+};
+
+template <>
+struct Payload<EMessageType::Abort>
+{
+    using Type = Empty;
+};
+
+template <>
+struct Payload<EMessageType::Send>
+{
+    using Type = PreMetadata;
+};
+
+template <>
+struct Payload<EMessageType::RequestReceive>
+{
+    using Type = PreMetadata;
+};
+
+template <>
+struct Payload<EMessageType::FinishReceive>
+{
+    using Type = Empty;
+};
+
+template <>
+struct Payload<EMessageType::FailedReceive>
+{
+    using Type = Empty;
+};
+
+template <>
+struct Payload<EMessageType::Receive>
+{
+    using Type = CodePhrase;
+};
+
+template <>
+struct Payload<EMessageType::Chunk>
+{
+    using Type = Buffer;
+};
+
+template <>
+struct Payload<EMessageType::FinalChunk>
+{
+    using Type = Empty;
+};
+
+using Message = Net::Message<Common::EMessageType>;
+
+template <EMessageType M>
+Message encode(const typename Payload<M>::Type &data)
+{
+    Message msg;
+    msg.header.id = M;
+    msg << data;
+    return msg;
+}
+
+template <EMessageType M>
+typename Payload<M>::Type decode(Message &msg)
+{
+    typename Payload<M>::Type data;
+    msg >> data;
+    return data;
+}
+
+} // namespace Common
+} // namespace PingPong

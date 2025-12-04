@@ -14,9 +14,6 @@ namespace PingPong
 class Session
 {
   public:
-    using Message = Net::Message<Common::EMessageType>;
-
-  public:
     Session(Common::EPayloadType payload_type)
         : m_payload_type{payload_type}
     {
@@ -49,7 +46,7 @@ class ClientSession : public Session
 class ClientReceiverSession : public ClientSession
 {
   public:
-    ClientReceiverSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const std::function<void(Message &&)> sendcb)
+    ClientReceiverSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const std::function<void(Common::Message &&)> sendcb)
         : ClientSession(payload_type, messages_in), m_file{file}, m_sendcb{sendcb}
     {
     }
@@ -60,15 +57,16 @@ class ClientReceiverSession : public ClientSession
 
     bool mainLoop() override
     {
+        using namespace Common;
+
         std::cout << __PRETTY_FUNCTION__ << '\n';
         std::ofstream ofs(m_file, std::ios::out | std::ios::binary);
 
         if (!ofs.is_open())
         {
             std::cerr << "Error opening file: " << m_file << std::endl;
-            Message outmsg;
-            outmsg.header.id = Common::EMessageType::Abort;
-            m_sendcb(std::move(outmsg));
+            Message failed_msg = encode<EMessageType::FailedReceive>(Empty{});
+            m_sendcb(std::move(failed_msg));
 
             return false;
         }
@@ -84,18 +82,18 @@ class ClientReceiverSession : public ClientSession
             while (!m_messages_in.empty())
             {
                 auto msg = m_messages_in.pop_front().msg;
-                if (msg.header.id == Common::EMessageType::Abort)
+                if (msg.header.id == EMessageType::Abort)
                 {
                     std::cout << "Abort command from the server\n";
                     op_result = false;
                     break;
                 }
-                else if (msg.header.id == Common::EMessageType::Chunk)
+                else if (msg.header.id == EMessageType::Chunk)
                 {
                     std::cout << "Incoming chunk of size " << msg.size() << '\n';
                     ofs.write(reinterpret_cast<const char *>(msg.body.data()), msg.size());
                 }
-                else if (msg.header.id == Common::EMessageType::FinalChunk)
+                else if (msg.header.id == EMessageType::FinalChunk)
                 {
                     std::cout << "End of transmission. Finishing." << '\n';
                     finish = true;
@@ -115,13 +113,13 @@ class ClientReceiverSession : public ClientSession
 
   private:
     const std::filesystem::path m_file;
-    std::function<void(Message &&)> m_sendcb;
+    std::function<void(Common::Message &&)> m_sendcb;
 };
 
 class ClientSenderSession : public ClientSession
 {
   public:
-    ClientSenderSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<void(Message &&)> sendcb)
+    ClientSenderSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<void(Common::Message &&)> sendcb)
         : ClientSession(payload_type, messages_in), m_file{file}, m_max_chunk_size{chunksize}, m_sendcb{sendcb}
     {
     }
@@ -132,6 +130,8 @@ class ClientSenderSession : public ClientSession
 
     bool mainLoop() override
     {
+        using namespace Common;
+
         std::cout << __PRETTY_FUNCTION__ << '\n';
         if (!std::filesystem::exists(m_file))
         {
@@ -141,9 +141,6 @@ class ClientSenderSession : public ClientSession
 
         std::ifstream ifs(m_file, std::ios::binary);
 
-        Message msg;
-        msg.body = std::vector<std::uint8_t>(m_max_chunk_size);
-
         bool op_result = true;
 
         while (ifs && op_result)
@@ -151,8 +148,8 @@ class ClientSenderSession : public ClientSession
             // Check for incoming messages from a server
             while (!m_messages_in.empty())
             {
-                auto msg = m_messages_in.pop_front().msg;
-                if (msg.header.id == Common::EMessageType::Abort)
+                auto incoming_msg = m_messages_in.pop_front().msg;
+                if (incoming_msg.header.id == EMessageType::Abort)
                 {
                     std::cout << "Abort command from the server\n";
                     op_result = false;
@@ -160,19 +157,22 @@ class ClientSenderSession : public ClientSession
                 }
                 else
                 {
-                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
+                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(incoming_msg.header.id) << '\n';
                 }
             }
 
             if (!op_result)
                 break;
 
+            Message msg;
+            msg.body = std::vector<std::uint8_t>(m_max_chunk_size);
+
             ifs.read(reinterpret_cast<char *>(msg.body.data()), msg.body.size());
             const std::streamsize n = ifs.gcount();
 
             if (n > 0)
             {
-                msg.header.id = Common::EMessageType::Chunk;
+                msg.header.id = EMessageType::Chunk;
                 msg.body.resize(static_cast<size_t>(n));
                 msg.header.size = msg.body.size();
 
@@ -187,10 +187,8 @@ class ClientSenderSession : public ClientSession
         }
 
         std::cout << "Sending FinalChunk\n";
-        msg.header.id = Common::EMessageType::FinalChunk;
-        msg.header.size = 0;
-        msg.body.clear();
-        m_sendcb(std::move(msg));
+        Message final_msg = encode<EMessageType::FinalChunk>(Empty{});
+        m_sendcb(std::move(final_msg));
 
         ifs.close();
 
@@ -200,7 +198,7 @@ class ClientSenderSession : public ClientSession
   private:
     const std::filesystem::path m_file;
     const uint64_t m_max_chunk_size;
-    std::function<void(Message &&)> m_sendcb;
+    std::function<void(Common::Message &&)> m_sendcb;
 };
 
 class ServerSession : public Session
@@ -215,7 +213,7 @@ class ServerSession : public Session
     }
 
   public:
-    virtual bool onMessage(Message &&msg) = 0;
+    virtual bool onMessage(Common::Message &&msg) = 0;
 };
 
 class ServerOneToOneRetranslatorSession : public ServerSession
@@ -230,11 +228,13 @@ class ServerOneToOneRetranslatorSession : public ServerSession
     {
     }
 
-    bool onMessage(Message &&msg) override
+    bool onMessage(Common::Message &&msg) override
     {
+        using namespace Common;
+
         std::cout << __PRETTY_FUNCTION__ << " msg type: " << (int)msg.header.id << '\n';
 
-        if (msg.header.id == Common::EMessageType::Chunk || msg.header.id == Common::EMessageType::FinalChunk)
+        if (msg.header.id == EMessageType::Chunk || msg.header.id == EMessageType::FinalChunk)
         {
             m_sink->send(std::move(msg));
             return true;
@@ -266,9 +266,11 @@ class ServerSaveFileSession : public ServerSession
         m_ofs.close();
     }
 
-    bool onMessage(Message &&msg) override
+    bool onMessage(Common::Message &&msg) override
     {
-        if (msg.header.id == Common::EMessageType::Chunk)
+        using namespace Common;
+
+        if (msg.header.id == EMessageType::Chunk)
         {
             if (!m_ofs.is_open())
             {

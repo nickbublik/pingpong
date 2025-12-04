@@ -4,6 +4,8 @@
 
 namespace PingPong
 {
+using namespace Common;
+
 bool receiveRoutine(const Operation &op)
 {
     std::cout << __PRETTY_FUNCTION__ << '\n';
@@ -26,20 +28,19 @@ bool receiveRoutine(const Operation &op)
 
     {
         {
-            Message msg;
-            msg.header.id = Common::EMessageType::RequestReceive;
 
-            Common::PreMetadata request;
+            PreMetadata pre;
             {
-                request.payload_type = Common::EPayloadType::File;
+                pre.payload_type = EPayloadType::File;
 
-                request.code_phrase.code = op.receival_code_phrase;
-                request.code_phrase.code_size = request.code_phrase.code.size();
+                pre.code_phrase.code = op.receival_code_phrase;
+                pre.code_phrase.code_size = pre.code_phrase.code.size();
             }
 
-            msg << request;
-            std::cout << msg << '\n';
-            c.send(std::move(msg));
+            Message req_receive_msg = encode<EMessageType::RequestReceive>(pre);
+
+            std::cout << req_receive_msg << '\n';
+            c.send(std::move(req_receive_msg));
         }
 
         c.incoming().wait();
@@ -47,15 +48,14 @@ bool receiveRoutine(const Operation &op)
         while (!c.incoming().empty())
         {
             auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == Common::EMessageType::Reject)
+            if (msg.header.id == EMessageType::Reject)
             {
                 std::cout << "Server forbids receiving a file\n";
                 return false;
             }
-            else if (msg.header.id == Common::EMessageType::Accept)
+            else if (msg.header.id == EMessageType::Accept)
             {
-                Common::PostMetadata response;
-                msg >> response;
+                PostMetadata response = decode<EMessageType::Accept>(msg);
                 std::cout << "Do you want to accept an incoming file \"" << response.file_data.file_name << "\" of size " << response.file_data.file_size << "? [y/N]\n";
                 break;
             }
@@ -71,20 +71,21 @@ bool receiveRoutine(const Operation &op)
     }
 
     {
-        Message msg;
-        Common::CodePhrase code_phrase;
+        CodePhrase code_phrase;
         code_phrase.code = op.receival_code_phrase;
         code_phrase.code_size = code_phrase.code.size();
 
-        msg.header.id = Common::EMessageType::Receive;
-        msg << code_phrase;
-        std::cout << msg << '\n';
-        c.send(std::move(msg));
+        Message receive_msg = encode<EMessageType::Receive>(code_phrase);
+        std::cout << receive_msg << '\n';
+        c.send(std::move(receive_msg));
     }
 
-    std::filesystem::path outfile{"./out.txt"};
+    std::filesystem::path outfile{"./out"};
 
-    ClientReceiverSession session(Common::EPayloadType::File, c.incoming(), outfile, [&c](Message &&msg)
+    ClientReceiverSession session(EPayloadType::File,
+                                  c.incoming(),
+                                  outfile,
+                                  [&c](Message &&msg)
                                   { c.send(std::move(msg)); });
     bool res = session.mainLoop();
     if (!res)
@@ -95,18 +96,13 @@ bool receiveRoutine(const Operation &op)
 
     // Signal about the successful end of transmission
     {
-        Message msg;
-        msg.header.id = Common::EMessageType::Success;
-        Common::CodePhrase code_phrase;
-        code_phrase.code = op.receival_code_phrase;
-        code_phrase.code_size = code_phrase.code.size();
-        msg << code_phrase;
-        c.send(std::move(msg));
+        Message fin_receive_msg = encode<EMessageType::FinishReceive>(Empty{});
+        c.send(std::move(fin_receive_msg));
+        std::cout << "Sending FinishReceive. m_pending_writes = " << c.getPendingWrites() << '\n';
 
-        std::cout << "Receiver has sent Success message\n";
-        std::cout << "Before flush: m_pending_writes = " << c.getPendingWrites() << '\n';
+        // wait till all outgoing messaged are sent
         c.flush();
-        std::cout << "After flush: m_pending_writes = " << c.getPendingWrites() << '\n';
+        std::cout << "After flush. m_pending_writes = " << c.getPendingWrites() << '\n';
     }
 
     return true;
