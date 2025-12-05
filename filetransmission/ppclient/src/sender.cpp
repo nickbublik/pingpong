@@ -13,7 +13,16 @@ bool sendRoutine(const Operation &op)
     FileClient c;
     bool connected = c.connect("127.0.0.1", 60000);
 
-    using namespace PingPong;
+    if (!connected)
+    {
+        std::cerr << "Failed to connect to the server\n";
+        return 1;
+    }
+
+    while (!c.isConnected())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
     uint64_t chunksize;
 
