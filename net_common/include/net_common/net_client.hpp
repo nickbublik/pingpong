@@ -57,10 +57,12 @@ class ClientBase
 
     bool isConnected() const
     {
-        if (m_connection)
-            return m_connection->isConnected();
-        else
-            return false;
+        return m_connection->isConnected();
+    }
+
+    bool isValidated() const
+    {
+        return m_connection->isValidated();
     }
 
     void flush()

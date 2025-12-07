@@ -139,6 +139,11 @@ class FileServer : public Net::ServerBase<EMessageType>
     ~FileServer() override = default;
 
   protected:
+    void onClientValidated(ConnectionPtr client) override
+    {
+        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+    }
+
     bool onClientConnect(ConnectionPtr client) override
     {
         std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';

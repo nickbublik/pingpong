@@ -21,7 +21,7 @@ bool receiveRoutine(const Operation &op)
         return 1;
     }
 
-    while (!c.isConnected())
+    while (!(c.isConnected() && c.isValidated()))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }

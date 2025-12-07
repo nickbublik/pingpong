@@ -70,7 +70,7 @@ class ServerBase
                     if (onClientConnect(new_conn))
                     {
                         m_connections.push_back(new_conn);
-                        m_connections.back()->connectToClient(m_id_counter++);
+                        m_connections.back()->connectToClient(*this, m_id_counter++);
 
                         std::cout << c_log_prefix << " [" << m_connections.back()->getId() << " ] connection approved\n";
                     }
@@ -139,6 +139,11 @@ class ServerBase
         }
     }
 
+  public:
+    virtual void onClientValidated(std::shared_ptr<Connection<T>> client)
+    {
+    }
+
   protected:
     virtual bool onClientConnect(std::shared_ptr<Connection<T>> client)
     {
@@ -149,7 +154,7 @@ class ServerBase
     {
     }
 
-    virtual void onMessage(std::shared_ptr<Connection<T>> client, Message<T>&& msg)
+    virtual void onMessage(std::shared_ptr<Connection<T>> client, Message<T> &&msg)
     {
     }
 

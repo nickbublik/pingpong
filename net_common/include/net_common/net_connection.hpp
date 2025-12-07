@@ -1,9 +1,15 @@
 #pragma once
 
+#include <chrono>
+
 #include "net_message.hpp"
+#include "net_server.hpp"
 
 namespace Net
 {
+template <typename T>
+class ServerBase;
+
 template <typename T>
 class Connection : public std::enable_shared_from_this<Connection<T>>
 {
@@ -18,6 +24,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     Connection(EOwner parent, boost::asio::io_context &context, boost::asio::ip::tcp::socket socket, TSQueue<OwnedMessage<T>> &messages_in)
         : m_asio_context{context}, m_socket{std::move(socket)}, m_messages_in{messages_in}, m_owner_type{parent}
     {
+        if (m_owner_type == EOwner::Server)
+        {
+            m_handshake_out = static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count());
+            m_handshake_crypted = encrypt(m_handshake_out);
+            std::cout << (int)m_owner_type << " Connection ctr. m_handshake_out = " << m_handshake_out << ", m_handshake_crypted = " << m_handshake_crypted << '\n';
+        }
     }
 
     virtual ~Connection()
@@ -30,15 +42,14 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     }
 
   public:
-    void connectToClient(uint32_t uid)
+    void connectToClient(ServerBase<T> &server, uint32_t uid)
     {
-        if (m_owner_type == EOwner::Server)
+        if (m_owner_type == EOwner::Server && m_socket.is_open())
         {
-            if (m_socket.is_open())
-            {
-                m_id = uid;
-                readHeader();
-            }
+            m_id = uid;
+
+            writeValidation();
+            readValidation(&server);
         }
     }
 
@@ -53,7 +64,8 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                 {
                     if (!ec)
                     {
-                        readHeader();
+                        // readHeader();
+                        readValidation();
                     }
                 });
         }
@@ -73,13 +85,21 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         return m_socket.is_open();
     }
 
+    bool isValidated() const
+    {
+        return m_validated.load(std::memory_order_acquire);
+    }
+
     void startListening()
     {
     }
 
   public:
-    void send(const Message<T> msg)
+    bool send(const Message<T> msg)
     {
+        if (!m_validated.load(std::memory_order_acquire))
+            return false;
+
         {
             std::lock_guard<std::mutex> lk(m_flush_mutex);
             ++m_pending_writes;
@@ -92,6 +112,8 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
 
                             if (!already_writing)
                                 writeHeader(); });
+
+        return true;
     }
 
     size_t getPendingWrites() const
@@ -176,6 +198,68 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     }
 
     // ASYNC
+    void writeValidation()
+    {
+        std::cout << (int)m_owner_type << " writeValidation. m_handshake_out = " << m_handshake_out << '\n';
+        boost::asio::async_write(m_socket, boost::asio::buffer(&m_handshake_out, sizeof(uint64_t)),
+                                 [this](std::error_code ec, std::size_t length)
+                                 {
+                                     if (!ec)
+                                     {
+                                         if (m_owner_type == EOwner::Client)
+                                         {
+                                             m_validated.store(true, std::memory_order_release);
+                                             readHeader();
+                                         }
+                                     }
+                                     else
+                                     {
+                                         m_socket.close();
+                                     }
+                                 });
+    }
+
+    // ASYNC
+    void readValidation(ServerBase<T> *server = nullptr)
+    {
+        boost::asio::async_read(m_socket, boost::asio::buffer(&m_handshake_in, sizeof(m_handshake_in)),
+                                [this, server](std::error_code ec, size_t length)
+                                {
+                                    std::cout << (int)m_owner_type << " readValidation result lambda. m_handshake_in = " << m_handshake_in << '\n';
+                                    if (!ec)
+                                    {
+                                        if (m_owner_type == EOwner::Server)
+                                        {
+                                            if (m_handshake_in == m_handshake_crypted)
+                                            {
+                                                std::cout << "[SERVER]: client validated\n";
+                                                m_validated.store(true, std::memory_order_release);
+                                                server->onClientValidated(this->shared_from_this());
+
+                                                readHeader();
+                                            }
+                                            else
+                                            {
+                                                std::cout << "[SERVER]: client failed to be validated\n";
+                                                m_socket.close();
+                                            }
+                                        }
+                                        else if (m_owner_type == EOwner::Client)
+                                        {
+                                            m_handshake_out = encrypt(m_handshake_in);
+                                            std::cout << (int)m_owner_type << " readValidation result lambda. m_handshake_out = " << m_handshake_out << '\n';
+                                            writeValidation();
+                                        }
+                                    }
+                                    else
+                                    {
+                                        std::cout << "Client disconnected (on readValidation)\n";
+                                        m_socket.close();
+                                    }
+                                });
+    }
+
+    // ASYNC
     void readHeader()
     {
         boost::asio::async_read(m_socket, boost::asio::buffer(&m_forming_in_message.header, sizeof(MessageHeader<T>)),
@@ -229,6 +313,13 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         readHeader();
     }
 
+    uint64_t encrypt(uint64_t in)
+    {
+        uint64_t out = in ^ 0xBABA15ACAB0011FF;
+        out = (out & 0xC0A0C0A0B0B0B0) >> 4 | (out & 0x0C0A0C0A0B0B0B) << 4;
+        return out ^ 0xBABA15FACE1EE788;
+    }
+
   protected:
     boost::asio::ip::tcp::socket m_socket;
     boost::asio::io_context &m_asio_context;
@@ -241,5 +332,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     mutable std::mutex m_flush_mutex;
     std::condition_variable m_flush_cv;
     size_t m_pending_writes = 0;
+
+    std::atomic_bool m_validated{false};
+
+    // Handshake Validation
+    uint64_t m_handshake_out = 0;
+    uint64_t m_handshake_in = 0;
+    uint64_t m_handshake_crypted = 0;
 };
 } // namespace Net
