@@ -27,7 +27,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         if (m_owner_type == EOwner::Server)
         {
             m_handshake_out = static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count());
-            m_handshake_crypted = encrypt(m_handshake_out);
+            m_handshake_crypted = obfuscate(m_handshake_out);
             std::cout << (int)m_owner_type << " Connection ctr. m_handshake_out = " << m_handshake_out << ", m_handshake_crypted = " << m_handshake_crypted << '\n';
         }
     }
@@ -246,7 +246,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                         }
                                         else if (m_owner_type == EOwner::Client)
                                         {
-                                            m_handshake_out = encrypt(m_handshake_in);
+                                            m_handshake_out = obfuscate(m_handshake_in);
                                             std::cout << (int)m_owner_type << " readValidation result lambda. m_handshake_out = " << m_handshake_out << '\n';
                                             writeValidation();
                                         }
@@ -313,7 +313,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         readHeader();
     }
 
-    uint64_t encrypt(uint64_t in)
+    uint64_t obfuscate(uint64_t in)
     {
         uint64_t out = in ^ 0xBABA15ACAB0011FF;
         out = (out & 0xC0A0C0A0B0B0B0) >> 4 | (out & 0x0C0A0C0A0B0B0B) << 4;
