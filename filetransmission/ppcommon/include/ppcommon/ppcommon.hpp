@@ -1,7 +1,11 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
+#include <vector>
+
+#include <openssl/sha.h>
 
 #include "net_common/net_message.hpp"
 
@@ -45,6 +49,15 @@ struct PostMetadata
 
 struct Empty
 {
+};
+
+using Buffer = std::vector<uint8_t>;
+using Hash = std::array<uint8_t, SHA256_DIGEST_LENGTH>;
+
+struct ChunkData
+{
+    Hash hash;
+    Buffer data;
 };
 
 } // namespace Common
@@ -112,6 +125,22 @@ Message<T> &operator>>(Message<T> &msg, PingPong::Common::PostMetadata &data)
     msg >> data.payload_type >> data.max_chunk_size >> data.code_phrase >> data.file_data;
     return msg;
 }
+
+template <typename T>
+Message<T> &operator<<(Message<T> &msg, const PingPong::Common::ChunkData &data)
+{
+    msg << data.data << data.hash;
+    return msg;
+}
+
+template <typename T>
+Message<T> &operator>>(Message<T> &msg, PingPong::Common::ChunkData &data)
+{
+    msg >> data.hash;
+    data.data.resize(msg.size());
+    msg >> data.data;
+    return msg;
+}
 } // namespace Net
 
 namespace PingPong
@@ -121,23 +150,21 @@ namespace Common
 enum class EMessageType : uint32_t
 {
     // Server replies
-    Accept,
-    Reject,
+    Accept = 0,
+    Reject = 1,
     // Server and Client replies
-    Success,
-    Abort,
+    Success = 2,
+    Abort = 3,
     // File transmission control
-    Send,
-    RequestReceive,
-    FinishReceive,
-    FailedReceive,
-    Receive,
+    Send = 4,
+    RequestReceive = 5,
+    FinishReceive = 6,
+    FailedReceive = 7,
+    Receive = 8,
     // File transmission process
-    Chunk,
-    FinalChunk
+    Chunk = 9,
+    FinalChunk = 10
 };
-
-using Buffer = std::vector<uint8_t>;
 
 template <EMessageType M>
 struct Payload;
@@ -199,7 +226,7 @@ struct Payload<EMessageType::Receive>
 template <>
 struct Payload<EMessageType::Chunk>
 {
-    using Type = Buffer;
+    using Type = ChunkData;
 };
 
 template <>

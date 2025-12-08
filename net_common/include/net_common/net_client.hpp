@@ -26,7 +26,7 @@ class ClientBase
             boost::asio::ip::tcp::resolver resolver(m_context);
             boost::asio::ip::tcp::resolver::results_type endpoints = resolver.resolve(host, std::to_string(port));
 
-            m_connection = std::make_unique<Connection<T>>(Connection<T>::EOwner::Client, m_context, boost::asio::ip::tcp::socket(m_context), m_messages_in);
+            m_connection = std::make_shared<Connection<T>>(Connection<T>::EOwner::Client, m_context, boost::asio::ip::tcp::socket(m_context), m_messages_in);
             m_connection->connectToServer(endpoints);
             m_context_thread = std::thread([this]()
                                            { m_context.run(); });
@@ -52,7 +52,7 @@ class ClientBase
         if (m_context_thread.joinable())
             m_context_thread.join();
 
-        m_connection.release();
+        m_connection.reset();
     }
 
     bool isConnected() const
@@ -68,7 +68,7 @@ class ClientBase
     void flush()
     {
         if (isConnected())
-            m_connection->waitForSendQueueEmpty();
+            m_connection->waitForOutgoingQueueEmpty();
     }
 
     size_t getPendingWrites() const
@@ -79,16 +79,20 @@ class ClientBase
         return 0;
     }
 
-    void send(const Message<T> &msg)
+    bool send(const Message<T> &msg)
     {
         if (isConnected())
-            m_connection->send(msg);
+            return m_connection->send(msg);
+        else
+            return false;
     }
 
-    void send(const Message<T> &&msg)
+    bool send(const Message<T> &&msg)
     {
         if (isConnected())
-            m_connection->send(std::move(msg));
+            return m_connection->send(std::move(msg));
+        else
+            return false;
     }
 
     TSQueue<OwnedMessage<T>> &incoming()
@@ -99,7 +103,7 @@ class ClientBase
   protected:
     boost::asio::io_context m_context;
     std::thread m_context_thread;
-    std::unique_ptr<Connection<T>> m_connection;
+    std::shared_ptr<Connection<T>> m_connection;
 
   private:
     TSQueue<OwnedMessage<T>> m_messages_in;

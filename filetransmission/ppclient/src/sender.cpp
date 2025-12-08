@@ -1,5 +1,7 @@
 #include "sender.hpp"
 
+#include <chrono>
+
 #include "ppcommon/session.hpp"
 
 namespace PingPong
@@ -44,7 +46,8 @@ bool sendRoutine(const Operation &op)
 
             std::cout << "Code: " << pre.code_phrase.code << '\n';
 
-            c.send(std::move(send_msg));
+            if (!c.send(std::move(send_msg)))
+                return false;
         }
         catch (const fs::filesystem_error &e)
         {
@@ -73,7 +76,7 @@ bool sendRoutine(const Operation &op)
     }
 
     ClientSenderSession session(EPayloadType::File, c.incoming(), op.filepath, chunksize, [&c](Message &&msg)
-                                { c.send(std::move(msg)); });
+                                { return c.send(std::move(msg)); });
 
     bool res = session.mainLoop();
     if (!res)
@@ -88,7 +91,9 @@ bool sendRoutine(const Operation &op)
 
     while (!success_from_receiver)
     {
-        c.incoming().wait();
+        using namespace std::chrono_literals;
+        c.waitForIncomingQueueMessage(50ms);
+        //c.incoming().wait();
 
         while (!c.incoming().empty())
         {

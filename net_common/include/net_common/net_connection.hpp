@@ -75,9 +75,22 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     {
         if (isConnected())
         {
-            boost::asio::post(m_asio_context, [this]()
-                              { m_socket.close(); });
+            boost::asio::post(m_asio_context, [self = this->shared_from_this()]()
+                              { self->m_socket.close(); });
         }
+    }
+
+    void disconnectAfterFlush()
+    {
+        boost::asio::post(m_asio_context, [self = this->shared_from_this()]()
+                          {
+                              if (self->m_messages_out.empty())
+                              {
+                                  self->m_socket.close();
+                              }
+                              else {
+                                  self->m_close_after_flush = true;
+                              } });
     }
 
     bool isConnected() const
@@ -100,18 +113,21 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         if (!m_validated.load(std::memory_order_acquire))
             return false;
 
+        if (!isConnected())
+            return false;
+
         {
             std::lock_guard<std::mutex> lk(m_flush_mutex);
             ++m_pending_writes;
         }
 
-        boost::asio::post(m_asio_context, [this, msg = std::move(msg)]()
+        boost::asio::post(m_asio_context, [self = this->shared_from_this(), msg = std::move(msg)]()
                           {
-                            bool already_writing = !m_messages_out.empty();
-                            m_messages_out.push_back(std::move(msg));
+                            bool already_writing = !self->m_messages_out.empty();
+                            self->m_messages_out.push_back(std::move(msg));
 
                             if (!already_writing)
-                                writeHeader(); });
+                                self->writeHeader(); });
 
         return true;
     }
@@ -122,11 +138,19 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         return m_pending_writes;
     }
 
-    void waitForSendQueueEmpty()
+    void waitForOutgoingQueueEmpty()
     {
         std::unique_lock<std::mutex> lk(m_flush_mutex);
         m_flush_cv.wait(lk, [this]
                         { return m_pending_writes == 0 && m_messages_out.empty(); });
+    }
+
+    void waitForIncomingQueueMessage(const std::chrono::milliseconds &check_period)
+    {
+        while (isConnected() && m_messages_in.empty())
+        {
+            m_messages_in.waitFor(check_period);
+        }
     }
 
   private:
@@ -158,6 +182,10 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                              {
                                                  writeHeader();
                                              }
+                                             else if (m_close_after_flush)
+                                             {
+                                                 m_socket.close();
+                                             }
                                          }
                                      }
                                      else
@@ -188,6 +216,10 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                          if (!m_messages_out.empty())
                                          {
                                              writeHeader();
+                                         }
+                                         else if (m_close_after_flush)
+                                         {
+                                             m_socket.close();
                                          }
                                      }
                                      else
@@ -334,6 +366,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     size_t m_pending_writes = 0;
 
     std::atomic_bool m_validated{false};
+    bool m_close_after_flush{false};
 
     // Handshake Validation
     uint64_t m_handshake_out = 0;

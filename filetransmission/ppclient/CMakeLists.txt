@@ -12,6 +12,7 @@ find_package(Boost 1.89.0 REQUIRED
     CONFIG
 )
 
+find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
 project(ppclient
@@ -29,6 +30,7 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE Threads::Threads
     PRIVATE Boost::headers
     PRIVATE Boost::program_options
+    PRIVATE OpenSSL::Crypto
     PRIVATE net_common
     PRIVATE ppcommon
 )

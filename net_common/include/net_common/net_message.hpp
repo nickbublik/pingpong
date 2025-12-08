@@ -54,7 +54,6 @@ struct Message
         return msg;
     }
 
-    // template <typename Container, typename = std::enable_if_t<!std::is_trivially_copyable_v<Container>>>
     template <typename Container,
               typename Elem = std::remove_reference_t<
                   decltype(*std::data(std::declval<const Container &>()))>,

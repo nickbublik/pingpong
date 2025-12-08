@@ -85,6 +85,13 @@ class TSQueue
                            { return !m_deq.empty(); });
     }
 
+    void waitFor(const std::chrono::milliseconds &period)
+    {
+        std::unique_lock<std::mutex> ul(m_mutex);
+        m_blocking_cv.wait_for(ul, period, [this]()
+                               { return !m_deq.empty(); });
+    }
+
   private:
     mutable std::mutex m_mutex;
     std::condition_variable m_blocking_cv;

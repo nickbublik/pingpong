@@ -16,6 +16,7 @@ project(ppserver
     LANGUAGES CXX
 )
 
+find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
 add_executable(${PROJECT_NAME}
@@ -28,6 +29,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 target_link_libraries(${PROJECT_NAME}
     PRIVATE Boost::headers           # or Boost::boost on older CMake
     PRIVATE Threads::Threads
+    PRIVATE OpenSSL::Crypto
     PRIVATE net_common
     PRIVATE ppcommon
 )

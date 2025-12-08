@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 
+#include "hash.hpp"
 #include "net_common/net_connection.hpp"
 #include "net_common/net_message.hpp"
 #include "ppcommon.hpp"
@@ -90,7 +91,21 @@ class ClientReceiverSession : public ClientSession
                 }
                 else if (msg.header.id == EMessageType::Chunk)
                 {
-                    std::cout << "Incoming chunk of size " << msg.size() << '\n';
+                    const auto offset = SHA256_DIGEST_LENGTH;
+                    std::cout << "Incoming chunk of size " << msg.size() - offset << '\n';
+                    {
+                        Hash inc_hash;
+                        msg >> inc_hash;
+
+                        Hash hash = sha256_chunk(msg.body);
+
+                        if (inc_hash != hash)
+                        {
+                            std::cout << "Chunk control sums don't match. Aborting\n";
+                            op_result = false;
+                            break;
+                        }
+                    }
                     ofs.write(reinterpret_cast<const char *>(msg.body.data()), msg.size());
                 }
                 else if (msg.header.id == EMessageType::FinalChunk)
@@ -119,7 +134,7 @@ class ClientReceiverSession : public ClientSession
 class ClientSenderSession : public ClientSession
 {
   public:
-    ClientSenderSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<void(Common::Message &&)> sendcb)
+    ClientSenderSession(Common::EPayloadType payload_type, Net::TSQueue<Net::OwnedMessage<Common::EMessageType>> &messages_in, const std::filesystem::path &file, const uint64_t chunksize, const std::function<bool(Common::Message &&)> sendcb)
         : ClientSession(payload_type, messages_in), m_file{file}, m_max_chunk_size{chunksize}, m_sendcb{sendcb}
     {
     }
@@ -164,10 +179,13 @@ class ClientSenderSession : public ClientSession
             if (!op_result)
                 break;
 
+            const auto offset = SHA256_DIGEST_LENGTH;
+
             Message msg;
             msg.body = std::vector<std::uint8_t>(m_max_chunk_size);
 
             ifs.read(reinterpret_cast<char *>(msg.body.data()), msg.body.size());
+
             const std::streamsize n = ifs.gcount();
 
             if (n > 0)
@@ -176,14 +194,22 @@ class ClientSenderSession : public ClientSession
                 msg.body.resize(static_cast<size_t>(n));
                 msg.header.size = msg.body.size();
 
-                std::cout << "Sending Chunk of size " << msg.size() << '\n';
+                Hash hash = sha256_chunk(msg.body);
+                msg << hash;
+
+                std::cout << "Sending Chunk of size " << msg.size() - offset << '\n';
             }
             else
             {
                 break;
             }
 
-            m_sendcb(std::move(msg));
+            if (!m_sendcb(std::move(msg)))
+            {
+                std::cout << __PRETTY_FUNCTION__ << " failed to send message\n";
+                op_result = false;
+                break;
+            }
         }
 
         std::cout << "Sending FinalChunk\n";
@@ -198,7 +224,7 @@ class ClientSenderSession : public ClientSession
   private:
     const std::filesystem::path m_file;
     const uint64_t m_max_chunk_size;
-    std::function<void(Common::Message &&)> m_sendcb;
+    std::function<bool(Common::Message &&)> m_sendcb;
 };
 
 class ServerSession : public Session
@@ -234,9 +260,12 @@ class ServerOneToOneRetranslatorSession : public ServerSession
 
         std::cout << __PRETTY_FUNCTION__ << " msg type: " << (int)msg.header.id << '\n';
 
-        if (msg.header.id == EMessageType::Chunk || msg.header.id == EMessageType::FinalChunk)
+        if (msg.header.id == EMessageType::Chunk || msg.header.id == EMessageType::FinalChunk || msg.header.id == EMessageType::Abort)
         {
-            m_sink->send(std::move(msg));
+            if (!m_sink->send(std::move(msg)))
+            {
+                return false;
+            }
             return true;
         }
 
@@ -268,26 +297,27 @@ class ServerSaveFileSession : public ServerSession
 
     bool onMessage(Common::Message &&msg) override
     {
-        using namespace Common;
+        // @TODO: Deprecated
+        // using namespace Common;
 
-        if (msg.header.id == EMessageType::Chunk)
-        {
-            if (!m_ofs.is_open())
-            {
-                return false;
-            }
+        // if (msg.header.id == EMessageType::Chunk)
+        //{
+        //     if (!m_ofs.is_open())
+        //     {
+        //         return false;
+        //     }
 
-            m_ofs.write(reinterpret_cast<const char *>(msg.body.data()), msg.body.size());
+        //    m_ofs.write(reinterpret_cast<const char *>(msg.body.data()), msg.body.size());
 
-            if (m_ofs.fail())
-            {
-                return false;
-            }
-        }
-        else
-        {
-            return false;
-        }
+        //    if (m_ofs.fail())
+        //    {
+        //        return false;
+        //    }
+        //}
+        // else
+        //{
+        //    return false;
+        //}
 
         return true;
     }

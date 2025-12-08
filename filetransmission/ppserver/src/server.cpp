@@ -113,6 +113,7 @@ class ClientStorage
     {
         m_sessions.erase(sender);
         m_senders_receivers.left.erase(sender);
+        sender->disconnectAfterFlush();
     }
 
     void addSession(ConnectionPtr sender, ConnectionPtr receiver, SessionUPtr session)
@@ -273,14 +274,6 @@ class FileServer : public Net::ServerBase<EMessageType>
     {
         std::cout << "[" << client->getId() << "]: error in send-session. Aborting\n";
 
-        // client->send(outmsg);
-        // ConnectionPtr receiver = m_storage.getReceiverBySender(client);
-
-        // if (receiver)
-        //{
-        //     receiver->send(outmsg);
-        // }
-
         ServerSession *session = m_storage.getSessionBySender(client);
 
         if (session)
@@ -307,7 +300,9 @@ class FileServer : public Net::ServerBase<EMessageType>
         // bad  : Abort -> Sender, Abort -> Receiver
         else if (msg.header.id == EMessageType::Chunk)
         {
-            if (msg.size() > m_max_chunk_size)
+            // Checking chunk's size
+            const auto offset = SHA256_DIGEST_LENGTH;
+            if (msg.size() - offset > m_max_chunk_size)
             {
                 std::cout << "[" << client->getId() << "]: exceeded max chunk size\n";
                 removeSessionAbruptly(client);

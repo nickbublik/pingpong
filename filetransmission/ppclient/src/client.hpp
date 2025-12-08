@@ -19,6 +19,11 @@ class FileClient : public Net::ClientBase<Common::EMessageType>
     }
 
     ~FileClient() override = default;
+
+    void waitForIncomingQueueMessage(const std::chrono::milliseconds &check_period)
+    {
+        m_connection->waitForIncomingQueueMessage(check_period);
+    }
 };
 
 namespace fs = std::filesystem;
