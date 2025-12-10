@@ -18,4 +18,10 @@ std::optional<DiscoveredServer> discoverServer(boost::asio::io_context &context,
                                                std::chrono::milliseconds timeout,
                                                std::chrono::milliseconds polling_delay);
 
+std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
+    boost::asio::io_context &context,
+    uint16_t discovery_port,
+    std::chrono::milliseconds timeout,
+    std::chrono::milliseconds polling_delay);
+
 } // namespace PingPong

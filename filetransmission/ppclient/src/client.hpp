@@ -30,7 +30,8 @@ class FileClient : public Net::ClientBase<Common::EMessageType>
     bool autoConnect(uint16_t discovery_port, std::chrono::milliseconds timeout, std::chrono::milliseconds polling_delay = std::chrono::milliseconds(50))
     {
         std::cout << __PRETTY_FUNCTION__ << " discovery_port = " << discovery_port << '\n';
-        std::optional<DiscoveredServer> res = discoverServer(m_context, discovery_port, timeout, polling_delay);
+        // std::optional<DiscoveredServer> res = discoverServer(m_context, discovery_port, timeout, polling_delay);
+        std::optional<DiscoveredServer> res = discoverServerByUnicastBruteforce(m_context, discovery_port, timeout, polling_delay);
 
         if (res)
         {
