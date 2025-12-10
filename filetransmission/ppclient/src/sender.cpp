@@ -6,19 +6,17 @@
 
 namespace PingPong
 {
-using namespace Common;
 
-bool sendRoutine(const Operation &op)
+namespace
 {
-    std::cout << __PRETTY_FUNCTION__ << '\n';
-
-    FileClient c;
+bool waitForConnection(FileClient &c)
+{
     bool connected = c.connect("127.0.0.1", 60000);
 
     if (!connected)
     {
         std::cerr << "Failed to connect to the server\n";
-        return 1;
+        return false;
     }
 
     while (!(c.isConnected() && c.isValidated()))
@@ -26,55 +24,64 @@ bool sendRoutine(const Operation &op)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    uint64_t chunksize;
+    return true;
+}
+} // namespace
 
+using namespace Common;
+
+bool establishSendSession(FileClient &c, const Operation &op, uint64_t &out_chunksize)
+{
+    try
     {
-        try
+        PreMetadata pre;
         {
-            PreMetadata pre;
-            {
-                pre.payload_type = EPayloadType::File;
+            pre.payload_type = EPayloadType::File;
 
-                pre.code_phrase.code = "abc";
-                pre.code_phrase.code_size = pre.code_phrase.code.size();
+            pre.code_phrase.code = "abc";
+            pre.code_phrase.code_size = pre.code_phrase.code.size();
 
-                pre.file_data.file_name = op.filepath.filename();
-                pre.file_data.file_name_size = pre.file_data.file_name.size();
-                pre.file_data.file_size = fs::file_size(op.filepath);
-            }
-            Message send_msg = encode<EMessageType::Send>(pre);
-
-            std::cout << "Code: " << pre.code_phrase.code << '\n';
-
-            if (!c.send(std::move(send_msg)))
-                return false;
+            pre.file_data.file_name = op.filepath.filename();
+            pre.file_data.file_name_size = pre.file_data.file_name.size();
+            pre.file_data.file_size = fs::file_size(op.filepath);
         }
-        catch (const fs::filesystem_error &e)
+        Message send_msg = encode<EMessageType::Send>(pre);
+
+        std::cout << "Code: " << pre.code_phrase.code << '\n';
+
+        if (!c.send(std::move(send_msg)))
+            return false;
+    }
+    catch (const fs::filesystem_error &e)
+    {
+        std::cerr << "Caught the exception: " << e.what();
+        return false;
+    }
+
+    c.incoming().wait();
+
+    while (!c.incoming().empty())
+    {
+        auto msg = c.incoming().pop_front().msg;
+        if (msg.header.id == EMessageType::Reject)
         {
-            std::cerr << "Caught the exception: " << e.what();
+            std::cout << "Server forbids sending a file\n";
             return false;
         }
-
-        c.incoming().wait();
-
-        while (!c.incoming().empty())
+        else if (msg.header.id == EMessageType::Accept)
         {
-            auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == EMessageType::Reject)
-            {
-                std::cout << "Server forbids sending a file\n";
-                return false;
-            }
-            else if (msg.header.id == EMessageType::Accept)
-            {
-                PostMetadata post_metadata = decode<EMessageType::Accept>(msg);
-                chunksize = post_metadata.max_chunk_size;
-                std::cout << "Server accepted sending a file with max chunksize of " << chunksize << " bytes\n";
-                break;
-            }
+            PostMetadata post_metadata = decode<EMessageType::Accept>(msg);
+            out_chunksize = post_metadata.max_chunk_size;
+            std::cout << "Server accepted sending a file with max chunksize of " << out_chunksize << " bytes\n";
+            break;
         }
     }
 
+    return true;
+}
+
+bool startSendSession(FileClient &c, const Operation &op, const uint64_t chunksize)
+{
     ClientSenderSession session(EPayloadType::File, c.incoming(), op.filepath, chunksize, [&c](Message &&msg)
                                 { return c.send(std::move(msg)); });
 
@@ -85,29 +92,57 @@ bool sendRoutine(const Operation &op)
         return false;
     }
 
+    return true;
+}
+
+bool waitForConfirmation(FileClient &c)
+{
     std::cout << __PRETTY_FUNCTION__ << " waiting for Success message" << '\n';
 
-    bool success_from_receiver = false;
+    bool is_completed = false;
 
-    while (!success_from_receiver)
+    while (!is_completed)
     {
         using namespace std::chrono_literals;
         c.waitForIncomingQueueMessage(50ms);
-        //c.incoming().wait();
 
         while (!c.incoming().empty())
         {
             auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == EMessageType::Success)
+            if (msg.header.id == EMessageType::Abort)
+            {
+                std::cout << "Server aborted file receival\n";
+                return false;
+            }
+            else if (msg.header.id == EMessageType::Success)
             {
                 std::cout << "Server confirmed file receival\n";
-                success_from_receiver = true;
-                break;
+                return true;
             }
         }
     }
 
-    return true;
+    return false;
+}
+
+bool sendRoutine(const Operation &op)
+{
+    std::cout << __PRETTY_FUNCTION__ << '\n';
+
+    FileClient c;
+
+    if (!waitForConnection(c))
+        return false;
+
+    uint64_t chunksize;
+
+    if (!establishSendSession(c, op, chunksize))
+        return false;
+
+    if (!startSendSession(c, op, chunksize))
+        return false;
+
+    return waitForConfirmation(c);
 }
 
 } // namespace PingPong

@@ -4,21 +4,16 @@
 
 namespace PingPong
 {
-using namespace Common;
-
-bool receiveRoutine(const Operation &op)
+namespace
 {
-    std::cout << __PRETTY_FUNCTION__ << '\n';
-
-    FileClient c;
+bool waitForConnection(FileClient &c)
+{
     bool connected = c.connect("127.0.0.1", 60000);
-
-    uint64_t chunksize;
 
     if (!connected)
     {
         std::cerr << "Failed to connect to the server\n";
-        return 1;
+        return false;
     }
 
     while (!(c.isConnected() && c.isValidated()))
@@ -26,50 +21,52 @@ bool receiveRoutine(const Operation &op)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    return true;
+}
+} // namespace
+
+using namespace Common;
+
+bool establishReceiveSession(FileClient &c, const Operation &op)
+{
     {
+        PreMetadata pre;
         {
+            pre.payload_type = EPayloadType::File;
 
-            PreMetadata pre;
-            {
-                pre.payload_type = EPayloadType::File;
-
-                pre.code_phrase.code = op.receival_code_phrase;
-                pre.code_phrase.code_size = pre.code_phrase.code.size();
-            }
-
-            Message req_receive_msg = encode<EMessageType::RequestReceive>(pre);
-
-            std::cout << req_receive_msg << '\n';
-            c.send(std::move(req_receive_msg));
+            pre.code_phrase.code = op.receival_code_phrase;
+            pre.code_phrase.code_size = pre.code_phrase.code.size();
         }
 
-        c.incoming().wait();
+        Message req_receive_msg = encode<EMessageType::RequestReceive>(pre);
 
-        while (!c.incoming().empty())
+        std::cout << req_receive_msg << '\n';
+        c.send(std::move(req_receive_msg));
+    }
+
+    c.incoming().wait();
+
+    while (!c.incoming().empty())
+    {
+        auto msg = c.incoming().pop_front().msg;
+        if (msg.header.id == EMessageType::Reject)
         {
-            auto msg = c.incoming().pop_front().msg;
-            if (msg.header.id == EMessageType::Reject)
-            {
-                std::cout << "Server forbids receiving a file\n";
-                return false;
-            }
-            else if (msg.header.id == EMessageType::Accept)
-            {
-                PostMetadata response = decode<EMessageType::Accept>(msg);
-                std::cout << "Do you want to accept an incoming file \"" << response.file_data.file_name << "\" of size " << response.file_data.file_size << "? [y/N]\n";
-                break;
-            }
+            std::cout << "Server forbids receiving a file\n";
+            return false;
         }
-
-        char ans = 'n';
-        std::cin >> ans;
-
-        if (!(ans == 'y' || ans == 'Y'))
+        else if (msg.header.id == EMessageType::Accept)
         {
-            return true;
+            PostMetadata response = decode<EMessageType::Accept>(msg);
+            std::cout << "Do you want to accept an incoming file \"" << response.file_data.file_name << "\" of size " << response.file_data.file_size << "? [y/N]\n";
+            break;
         }
     }
 
+    return true;
+}
+
+bool startReceiveSession(FileClient &c, const Operation &op)
+{
     {
         CodePhrase code_phrase;
         code_phrase.code = op.receival_code_phrase;
@@ -87,12 +84,36 @@ bool receiveRoutine(const Operation &op)
                                   outfile,
                                   [&c](Message &&msg)
                                   { c.send(std::move(msg)); });
+
     bool res = session.mainLoop();
+
     if (!res)
-    {
         std::cout << "Receiving routine has failed\n";
+
+    return res;
+}
+
+bool receiveRoutine(const Operation &op)
+{
+    std::cout << __PRETTY_FUNCTION__ << '\n';
+
+    FileClient c;
+
+    if (!waitForConnection(c))
         return false;
-    }
+
+    if (!establishReceiveSession(c, op))
+        return false;
+
+    char ans = 'n';
+    std::cin >> ans;
+
+    // Skipping the receival because used declined it
+    if (!(ans == 'y' || ans == 'Y'))
+        return true;
+
+    if (!startReceiveSession(c, op))
+        return false;
 
     // Signal about the successful end of transmission
     {
