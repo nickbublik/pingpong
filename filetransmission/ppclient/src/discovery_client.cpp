@@ -21,10 +21,13 @@ std::optional<DiscoveredServer> discoverServer(boost::asio::io_context &context,
 
     udp::socket socket(context);
     socket.open(udp::v4());
+    socket.set_option(boost::asio::socket_base::reuse_address(true));
+    socket.bind(udp::endpoint(udp::v4(), 0));
     std::cout << __PRETTY_FUNCTION__ << " 2\n";
 
     socket.set_option(boost::asio::socket_base::broadcast(true));
-    udp::endpoint broadcast_endpoint(boost::asio::ip::make_address_v4("192.168.0.255"), discovery_port);
+    udp::endpoint broadcast_endpoint(boost::asio::ip::address_v4::broadcast(), discovery_port);
+    //udp::endpoint broadcast_endpoint(boost::asio::ip::make_address_v4("192.168.0.255"), discovery_port);
 
     socket.send_to(boost::asio::buffer(c_discovery_phrase, std::strlen(c_discovery_phrase)), broadcast_endpoint);
 
