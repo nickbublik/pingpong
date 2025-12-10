@@ -13,7 +13,7 @@ namespace
 {
 bool waitForConnection(FileClient &c)
 {
-    bool connected = c.connect("127.0.0.1", 60000);
+    bool connected = c.autoConnect(60009, std::chrono::seconds(2));
 
     if (!connected)
     {
@@ -22,9 +22,7 @@ bool waitForConnection(FileClient &c)
     }
 
     while (!(c.isConnected() && c.isValidated()))
-    {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
 
     return true;
 }

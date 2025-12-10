@@ -10,6 +10,8 @@
 #include "ppcommon/ppcommon.hpp"
 #include "ppcommon/session.hpp"
 
+#include "discovery_server.hpp"
+
 namespace PingPong
 {
 
@@ -132,9 +134,10 @@ class ClientStorage
 class FileServer : public Net::ServerBase<EMessageType>
 {
   public:
-    FileServer(uint16_t port)
-        : Net::ServerBase<EMessageType>(port)
+    FileServer(uint16_t discovery_port, uint16_t port)
+        : Net::ServerBase<EMessageType>(port), m_discovery_server(m_asio_context, discovery_port, port)
     {
+        std::cout << __PRETTY_FUNCTION__ << " discovery_port = " << discovery_port << ", tcp_port = " << port << '\n';
     }
 
     ~FileServer() override = default;
@@ -370,6 +373,7 @@ class FileServer : public Net::ServerBase<EMessageType>
   protected:
     ClientStorage m_storage;
     uint64_t m_max_chunk_size = 512;
+    DiscoveryServer m_discovery_server;
 };
 
 } // namespace PingPong
@@ -378,7 +382,7 @@ int main()
 {
     using namespace PingPong;
 
-    FileServer server(60000);
+    FileServer server(60009, 60010);
     server.start();
 
     while (true)

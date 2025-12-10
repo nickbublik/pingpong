@@ -24,6 +24,7 @@ add_executable(${PROJECT_NAME}
     src/receiver.cpp
     src/sender.cpp
     src/main.cpp
+    src/discovery_client.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}

@@ -21,6 +21,7 @@ find_package(Threads REQUIRED)
 
 add_executable(${PROJECT_NAME}
     src/server.cpp
+    src/discovery_server.cpp
 )
 
 set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)

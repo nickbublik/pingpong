@@ -42,7 +42,11 @@ class ClientBase
 
     void disconnect()
     {
-        if (isConnected())
+        if (!m_connection && !m_context_thread.joinable())
+            return;
+
+        // Only call through if connection exists
+        if (m_connection && m_connection->isConnected())
         {
             m_connection->disconnect();
         }
@@ -57,6 +61,9 @@ class ClientBase
 
     bool isConnected() const
     {
+        if (!m_connection)
+            return false;
+
         return m_connection->isConnected();
     }
 
