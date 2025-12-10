@@ -50,7 +50,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         std::string ip = subnet + std::to_string(i);
         udp::endpoint endpoint(boost::asio::ip::make_address_v4(ip), discovery_port);
         boost::system::error_code ec;
-        socket.send_to(boost::asio::buffer(c_discovery_phrase, std::strlen(c_discovery_phrase)), endpoint);
+        socket.send_to(boost::asio::buffer(c_discovery_phrase, std::strlen(c_discovery_phrase)), endpoint, 0, ec);
         // ignoring ec
     }
 
@@ -65,8 +65,12 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         size_t bytes = socket.receive_from(boost::asio::buffer(buffer),
                                          sender_endpoint, 0, ec);
 
+        if (ec != boost::asio::error::would_block)
+            std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
+
         if (!ec && bytes > 0)
         {
+            std::cout << "[DISCOVERY] response, no error\n";
             std::string_view data(buffer.data(), bytes);
 
             if (data.rfind(c_response_phrase, 0) == 0)
