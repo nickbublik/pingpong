@@ -36,10 +36,10 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     static constexpr char c_discovery_phrase[] = "pingpong_discover_v1";
     static constexpr char c_response_phrase[] = "pingpong_server_v1";
 
-    udp::socket sock(context);
-    sock.open(udp::v4());
-    sock.bind(udp::endpoint(udp::v4(), 0));
-    sock.non_blocking(true);
+    udp::socket socket(context);
+    socket.open(udp::v4());
+    socket.bind(udp::endpoint(udp::v4(), 0));
+    socket.non_blocking(true);
 
     std::string subnet = getLocalSubnet(); // example: "192.168.0."
     std::cout << "[DISCOVERY] scanning subnet: " << subnet << "x\n";
@@ -50,7 +50,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         std::string ip = subnet + std::to_string(i);
         udp::endpoint endpoint(boost::asio::ip::make_address_v4(ip), discovery_port);
         boost::system::error_code ec;
-        sock.send_to(boost::asio::buffer(c_discovery_phrase), endpoint, 0, ec);
+        socket.send_to(boost::asio::buffer(c_discovery_phrase, std::strlen(c_discovery_phrase)), endpoint);
         // ignoring ec
     }
 
@@ -62,7 +62,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     while (true)
     {
         boost::system::error_code ec;
-        size_t bytes = sock.receive_from(boost::asio::buffer(buffer),
+        size_t bytes = socket.receive_from(boost::asio::buffer(buffer),
                                          sender_endpoint, 0, ec);
 
         if (!ec && bytes > 0)
