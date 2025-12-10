@@ -7,6 +7,8 @@
 namespace PingPong
 {
 
+using namespace Common;
+
 namespace
 {
 bool waitForConnection(FileClient &c)
@@ -26,11 +28,8 @@ bool waitForConnection(FileClient &c)
 
     return true;
 }
-} // namespace
 
-using namespace Common;
-
-bool establishSendSession(FileClient &c, const Operation &op, uint64_t &out_chunksize)
+bool establishSession(FileClient &c, const Operation &op, uint64_t &out_chunksize)
 {
     try
     {
@@ -80,7 +79,7 @@ bool establishSendSession(FileClient &c, const Operation &op, uint64_t &out_chun
     return true;
 }
 
-bool startSendSession(FileClient &c, const Operation &op, const uint64_t chunksize)
+bool startSession(FileClient &c, const Operation &op, const uint64_t chunksize)
 {
     ClientSenderSession session(EPayloadType::File, c.incoming(), op.filepath, chunksize, [&c](Message &&msg)
                                 { return c.send(std::move(msg)); });
@@ -125,6 +124,9 @@ bool waitForConfirmation(FileClient &c)
     return false;
 }
 
+} // namespace
+
+
 bool sendRoutine(const Operation &op)
 {
     std::cout << __PRETTY_FUNCTION__ << '\n';
@@ -136,10 +138,10 @@ bool sendRoutine(const Operation &op)
 
     uint64_t chunksize;
 
-    if (!establishSendSession(c, op, chunksize))
+    if (!establishSession(c, op, chunksize))
         return false;
 
-    if (!startSendSession(c, op, chunksize))
+    if (!startSession(c, op, chunksize))
         return false;
 
     return waitForConfirmation(c);

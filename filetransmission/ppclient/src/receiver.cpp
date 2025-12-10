@@ -4,6 +4,8 @@
 
 namespace PingPong
 {
+using namespace Common;
+
 namespace
 {
 bool waitForConnection(FileClient &c)
@@ -23,11 +25,8 @@ bool waitForConnection(FileClient &c)
 
     return true;
 }
-} // namespace
 
-using namespace Common;
-
-bool establishReceiveSession(FileClient &c, const Operation &op)
+bool establishSession(FileClient &c, const Operation &op)
 {
     {
         PreMetadata pre;
@@ -65,7 +64,7 @@ bool establishReceiveSession(FileClient &c, const Operation &op)
     return true;
 }
 
-bool startReceiveSession(FileClient &c, const Operation &op)
+bool startSession(FileClient &c, const Operation &op)
 {
     {
         CodePhrase code_phrase;
@@ -92,6 +91,7 @@ bool startReceiveSession(FileClient &c, const Operation &op)
 
     return res;
 }
+} // namespace
 
 bool receiveRoutine(const Operation &op)
 {
@@ -102,7 +102,7 @@ bool receiveRoutine(const Operation &op)
     if (!waitForConnection(c))
         return false;
 
-    if (!establishReceiveSession(c, op))
+    if (!establishSession(c, op))
         return false;
 
     char ans = 'n';
@@ -112,7 +112,7 @@ bool receiveRoutine(const Operation &op)
     if (!(ans == 'y' || ans == 'Y'))
         return true;
 
-    if (!startReceiveSession(c, op))
+    if (!startSession(c, op))
         return false;
 
     // Signal about the successful end of transmission
