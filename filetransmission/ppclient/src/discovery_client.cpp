@@ -1,9 +1,13 @@
 #include "discovery_client.hpp"
 
 #include <array>
-#include <boost/asio/ip/address_v4.hpp>
 #include <iostream>
+#include <optional>
 #include <thread>
+
+#include <boost/asio/ip/address_v4.hpp>
+
+#include "unix_ip_utils.hpp"
 
 namespace PingPong
 {
@@ -36,22 +40,44 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     static constexpr char c_discovery_phrase[] = "pingpong_discover_v1";
     static constexpr char c_response_phrase[] = "pingpong_server_v1";
 
+    auto local_ip = getLocalIPv4();
+    auto netmask_opt = getNetmaskForIP(local_ip);
+
+    if (!netmask_opt)
+    {
+        std::cout << "[DISCOVERY] failed to get netmask\n";
+        return std::nullopt;
+    }
+
+    SubnetRange subrange = getSubnetRange(local_ip, *netmask_opt);
+
+    std::cout << "[DISCOVERY] local_ip   = " << local_ip.to_string() << "\n"
+              << "[DISCOVERY] netmask    = " << netmask_opt->to_string() << "\n"
+              << "[DISCOVERY] network    = " << subrange.network.to_string() << "\n"
+              << "[DISCOVERY] broadcast  = " << subrange.broadcast.to_string() << "\n"
+              << "[DISCOVERY] first_host = " << subrange.first_host.to_string() << "\n"
+              << "[DISCOVERY] last_host  = " << subrange.last_host.to_string() << "\n"
+              << "[DISCOVERY] host_count = " << subrange.host_count << "\n";
+
     udp::socket sock(context);
     sock.open(udp::v4());
     sock.bind(udp::endpoint(udp::v4(), 0));
     sock.non_blocking(true);
 
-    std::string subnet = getLocalSubnet(); // example: "192.168.0."
-    std::cout << "[DISCOVERY] scanning subnet: " << subnet << "x\n";
+    const uint32_t net_int = subrange.network.to_uint();
+    const uint32_t first_host_int = subrange.first_host.to_uint();
+    const uint32_t last_host_int = subrange.last_host.to_uint();
 
-    // Send discovery packet to all IPs from .1 to .254
-    for (int i = 1; i < 255; ++i)
+    for (uint32_t addr_int = first_host_int; addr_int <= last_host_int; ++addr_int)
     {
-        std::string ip = subnet + std::to_string(i);
-        udp::endpoint endpoint(boost::asio::ip::make_address_v4(ip), discovery_port);
+        boost::asio::ip::address_v4 addr(addr_int);
+        if (addr == local_ip)
+            continue;
+
+        udp::endpoint endpoint(addr, discovery_port);
         boost::system::error_code ec;
-        sock.send_to(boost::asio::buffer(c_discovery_phrase), endpoint, 0, ec);
-        // ignoring ec
+        sock.send_to(boost::asio::buffer(c_discovery_phrase, strlen(c_discovery_phrase)), endpoint, 0, ec);
+        std::ignore = ec;
     }
 
     std::array<char, 1024> buffer;
@@ -72,9 +98,10 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
             if (data.rfind(c_response_phrase, 0) == 0)
             {
                 auto slash = data.find('/');
-                uint16_t port = (slash != std::string_view::npos)
-                                    ? std::stoi(std::string(data.substr(slash + 1)))
-                                    : 0;
+                uint16_t port = 0;
+                if (slash != std::string_view::npos)
+                    port = static_cast<uint16_t>(
+                        std::stoi(std::string(data.substr(slash + 1))));
 
                 DiscoveredServer result;
                 result.address = sender_endpoint.address().to_string();
