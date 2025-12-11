@@ -39,7 +39,7 @@ Operation readArguments(int argc, char **argv)
     {
         op.type = EOperationType::Send;
         op.filepath = vm["send"].as<fs::path>();
-        std::cout << "Client wants to send file " << op.filepath << '\n';
+        DBG_LOG("Client wants to send file ", op.filepath);
         if (!fs::exists(op.filepath))
         {
             throw std::runtime_error("File doesn't exist");
@@ -49,7 +49,7 @@ Operation readArguments(int argc, char **argv)
     {
         op.type = EOperationType::Receive;
         op.receival_code_phrase = vm["receive"].as<std::string>();
-        std::cout << "Client wants to receive file by a code phrase " << op.receival_code_phrase << '\n';
+        DBG_LOG("Client wants to receive file by a code phrase ", op.receival_code_phrase);
     }
     else
     {
@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
         result = receiveRoutine(op);
     }
 
-    std::cout << "Exiting...\n";
+    DBG_LOG("Exiting...");
 
     return !result;
 }

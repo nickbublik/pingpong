@@ -7,6 +7,8 @@
 
 #include <boost/asio/ip/address_v4.hpp>
 
+#include <logger/logger.hpp>
+
 #include "unix_ip_utils.hpp"
 
 namespace PingPong
@@ -45,29 +47,29 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
 
     if (!local_ip_opt)
     {
-        std::cout << "[DISCOVERY] failed to get local ip\n";
+        DBG_LOG("[DISCOVERY] failed to get local ip");
         return std::nullopt;
     }
 
-    std::cout << "[DISCOVERY] local ip = " << local_ip_opt->to_string() << "\n";
+    DBG_LOG("[DISCOVERY] local ip = ", local_ip_opt->to_string());
 
     auto netmask_opt = getNetmaskForIP(*local_ip_opt);
 
     if (!netmask_opt)
     {
-        std::cout << "[DISCOVERY] failed to get netmask\n";
+        DBG_LOG("[DISCOVERY] failed to get netmask");
         return std::nullopt;
     }
 
     SubnetRange subrange = getSubnetRange(*local_ip_opt, *netmask_opt);
 
-    std::cout << "[DISCOVERY] local_ip   = " << local_ip_opt->to_string() << "\n"
-              << "[DISCOVERY] netmask    = " << netmask_opt->to_string() << "\n"
-              << "[DISCOVERY] network    = " << subrange.network.to_string() << "\n"
-              << "[DISCOVERY] broadcast  = " << subrange.broadcast.to_string() << "\n"
-              << "[DISCOVERY] first_host = " << subrange.first_host.to_string() << "\n"
-              << "[DISCOVERY] last_host  = " << subrange.last_host.to_string() << "\n"
-              << "[DISCOVERY] host_count = " << subrange.host_count << "\n";
+    DBG_LOG("[DISCOVERY] local_ip   = ", local_ip_opt->to_string());
+    DBG_LOG("[DISCOVERY] netmask    = ", netmask_opt->to_string());
+    DBG_LOG("[DISCOVERY] network    = ", subrange.network.to_string());
+    DBG_LOG("[DISCOVERY] broadcast  = ", subrange.broadcast.to_string());
+    DBG_LOG("[DISCOVERY] first_host = ", subrange.first_host.to_string());
+    DBG_LOG("[DISCOVERY] last_host  = ", subrange.last_host.to_string());
+    DBG_LOG("[DISCOVERY] host_count = ", subrange.host_count);
 
     udp::socket sock(context);
     sock.open(udp::v4());
@@ -102,11 +104,11 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
                                          sender_endpoint, 0, ec);
 
         if (!ec && ec != boost::asio::error::would_block)
-            std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
+            DBG_LOG("[DISCOVERY] error : ", ec.message());
 
         if (!ec && bytes > 0)
         {
-            std::cout << "[DISCOVERY] response, no error\n";
+            DBG_LOG("[DISCOVERY] response, no error");
             std::string_view data(buffer.data(), bytes);
 
             if (data.rfind(c_response_phrase, 0) == 0)
@@ -121,8 +123,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
                 result.address = sender_endpoint.address().to_string();
                 result.port = port;
 
-                std::cout << "[DISCOVERY] found server at "
-                          << result.address << ":" << result.port << "\n";
+                DBG_LOG("[DISCOVERY] found server at ", result.address, ":", result.port);
 
                 return result;
             }
@@ -134,7 +135,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         std::this_thread::sleep_for(polling_delay);
     }
 
-    std::cout << "[DISCOVERY] no servers found via unicast scan.\n";
+    DBG_LOG("[DISCOVERY] no servers found via unicast scan.");
     return std::nullopt;
 }
 
@@ -143,7 +144,6 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
                                                           std::chrono::milliseconds timeout,
                                                           std::chrono::milliseconds polling_delay)
 {
-    std::cout << __PRETTY_FUNCTION__ << " 1\n";
     using boost::asio::ip::udp;
 
     static constexpr char c_discovery_phrase[] = "pingpong_discover_v1";
@@ -153,14 +153,11 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
     socket.open(udp::v4());
     socket.set_option(boost::asio::socket_base::reuse_address(true));
     socket.bind(udp::endpoint(udp::v4(), 0));
-    std::cout << __PRETTY_FUNCTION__ << " 2\n";
 
     socket.set_option(boost::asio::socket_base::broadcast(true));
     udp::endpoint broadcast_endpoint(boost::asio::ip::address_v4::broadcast(), discovery_port);
 
     socket.send_to(boost::asio::buffer(c_discovery_phrase, std::strlen(c_discovery_phrase)), broadcast_endpoint);
-
-    std::cout << __PRETTY_FUNCTION__ << " 3\n";
 
     socket.non_blocking(true);
 
@@ -169,15 +166,13 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
     std::array<char, 1024> buffer;
     udp::endpoint sender_endpoint;
 
-    std::cout << __PRETTY_FUNCTION__ << " 4\n";
-
     while (true)
     {
         boost::system::error_code ec;
         size_t bytes = socket.receive_from(boost::asio::buffer(buffer), sender_endpoint, 0, ec);
 
         if (!ec && ec != boost::asio::error::would_block)
-            std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
+            DBG_LOG("[DISCOVERY] error : ", ec.message());
 
         if (!ec && bytes > 0)
         {
@@ -197,7 +192,7 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
                 res.address = sender_endpoint.address().to_string();
                 res.port = port;
 
-                std::cout << "Found DiscoveredServer: address = " << res.address << ", port = " << res.port << '\n';
+                DBG_LOG("Found DiscoveredServer: address = ", res.address, ", port = ", res.port);
                 return res;
             }
         }
@@ -209,8 +204,6 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
 
         std::this_thread::sleep_for(polling_delay);
     }
-
-    std::cout << __PRETTY_FUNCTION__ << " 6\n";
 
     return std::nullopt;
 }

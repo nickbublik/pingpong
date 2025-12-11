@@ -37,7 +37,7 @@ bool establishSession(FileClient &c, const Operation &op)
 
         Message req_receive_msg = encode<EMessageType::RequestReceive>(pre);
 
-        std::cout << req_receive_msg << '\n';
+        DBG_LOG(req_receive_msg);
         c.send(std::move(req_receive_msg));
     }
 
@@ -48,7 +48,7 @@ bool establishSession(FileClient &c, const Operation &op)
         auto msg = c.incoming().pop_front().msg;
         if (msg.header.id == EMessageType::Reject)
         {
-            std::cout << "Server forbids receiving a file\n";
+            std::cerr << "Server forbids receiving a file\n";
             return false;
         }
         else if (msg.header.id == EMessageType::Accept)
@@ -70,7 +70,7 @@ bool startSession(FileClient &c, const Operation &op)
         code_phrase.code_size = code_phrase.code.size();
 
         Message receive_msg = encode<EMessageType::Receive>(code_phrase);
-        std::cout << receive_msg << '\n';
+        DBG_LOG(receive_msg);
         c.send(std::move(receive_msg));
     }
 
@@ -85,7 +85,7 @@ bool startSession(FileClient &c, const Operation &op)
     bool res = session.mainLoop();
 
     if (!res)
-        std::cout << "Receiving routine has failed\n";
+        std::cerr << "Receiving routine has failed\n";
 
     return res;
 }
@@ -93,7 +93,7 @@ bool startSession(FileClient &c, const Operation &op)
 
 bool receiveRoutine(const Operation &op)
 {
-    std::cout << __PRETTY_FUNCTION__ << '\n';
+    DBG_LOG(__PRETTY_FUNCTION__);
 
     FileClient c;
 
@@ -117,12 +117,14 @@ bool receiveRoutine(const Operation &op)
     {
         Message fin_receive_msg = encode<EMessageType::FinishReceive>(Empty{});
         c.send(std::move(fin_receive_msg));
-        std::cout << "Sending FinishReceive. m_pending_writes = " << c.getPendingWrites() << '\n';
+        DBG_LOG("Sending FinishReceive. m_pending_writes = ", c.getPendingWrites());
 
         // wait till all outgoing messaged are sent
         c.flush();
-        std::cout << "After flush. m_pending_writes = " << c.getPendingWrites() << '\n';
+        DBG_LOG("After flush. m_pending_writes = ", c.getPendingWrites());
     }
+
+    std::cout << "File have been successfully received\n";
 
     return true;
 }
