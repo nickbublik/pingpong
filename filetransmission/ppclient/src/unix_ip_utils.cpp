@@ -75,7 +75,7 @@ std::optional<address_v4> getLocalIPv4(std::string &out_ifc_name)
         if (isLinkLocalIPv4(addr_host))
             continue;
 
-        address_v4 addr = address_v4(addr_net);
+        address_v4 addr = address_v4(addr_host);
 
         std::string ifc_name = ifa->ifa_name ? ifa->ifa_name : "";
 
