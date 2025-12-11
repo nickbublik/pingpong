@@ -9,19 +9,124 @@
 namespace PingPong
 {
 
-boost::asio::ip::address_v4 getLocalIPv4()
+namespace
 {
-    using boost::asio::ip::udp;
+using boost::asio::ip::address_v4;
 
-    boost::asio::io_context ctx;
-    udp::socket tmp(ctx);
+// Check if an IPv4 address (host byte order) is private
+bool isPrivateIPv4(uint32_t horder_addr)
+{
+    // 10.0.0.0/8
+    if ((horder_addr & 0xFF000000u) == 0x0A000000u)
+        return true;
 
-    tmp.connect(udp::endpoint(boost::asio::ip::make_address_v4("8.8.8.8"), 80));
+    // 172.16.0.0/12
+    if ((horder_addr & 0xFFF00000u) == 0xAC100000u)
+        return true;
 
-    auto endpoint = tmp.local_endpoint();
-    auto ip = endpoint.address().to_v4();
-    return ip;
+    // 192.168.0.0/16
+    if ((horder_addr & 0xFFFF0000u) == 0xC0A80000u)
+        return true;
+
+    return false;
 }
+
+// Link-local 169.254.0.0/16
+bool isLinkLocalIPv4(uint32_t hostOrderAddr)
+{
+    return (hostOrderAddr & 0xFFFF0000u) == 0xA9FE0000u;
+}
+
+// Prefer private IPv4.
+// Otherwise: fallback to any non-loopback, non–link-local IPv4
+} // namespace
+
+std::optional<address_v4> getLocalIPv4(std::string &out_ifc_name)
+{
+    struct ifaddrs *ifaddr = nullptr;
+
+    if (getifaddrs(&ifaddr) == -1)
+        return std::nullopt;
+
+    std::optional<address_v4> best_private;
+    std::optional<address_v4> best_nonloopback;
+    std::string best_private_ifc, best_nonloopback_if;
+
+    for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
+    {
+        if (!ifa->ifa_addr)
+            continue;
+
+        if (ifa->ifa_addr->sa_family != AF_INET)
+            continue;
+
+        unsigned flags = ifa->ifa_flags;
+
+        if (!(flags & IFF_UP)) // skip inactive ifc
+            continue;
+
+        if (flags & IFF_LOOPBACK) // skip lo ifc
+            continue;
+
+        auto *sa = reinterpret_cast<sockaddr_in *>(ifa->ifa_addr);
+        uint32_t addr_net = sa->sin_addr.s_addr;
+        uint32_t addr_host = ntohl(addr_net);
+
+        if (isLinkLocalIPv4(addr_host))
+            continue;
+
+        address_v4 addr = address_v4(addr_net);
+
+        std::string ifc_name = ifa->ifa_name ? ifa->ifa_name : "";
+
+        if (isPrivateIPv4(addr_host))
+        {
+            if (!best_private)
+            {
+                best_private = addr;
+                best_private_ifc = ifc_name;
+            }
+        }
+        else
+        {
+            if (!best_nonloopback)
+            {
+                best_nonloopback = addr;
+                best_nonloopback_if = ifc_name;
+            }
+        }
+    }
+
+    freeifaddrs(ifaddr);
+
+    if (best_private)
+    {
+        out_ifc_name = best_private_ifc;
+        return best_private;
+    }
+
+    if (best_nonloopback)
+    {
+        out_ifc_name = best_nonloopback_if;
+        return best_nonloopback;
+    }
+
+    return std::nullopt;
+}
+
+// boost::asio::ip::address_v4 getLocalIPv4()
+//{
+//     using boost::asio::ip::udp;
+//
+//     boost::asio::io_context ctx;
+//     udp::socket tmp(ctx);
+//
+//     tmp.connect(udp::endpoint(boost::asio::ip::make_address_v4("8.8.8.8"), 80));
+//
+//     auto endpoint = tmp.local_endpoint();
+//     auto ip = endpoint.address().to_v4();
+//     return ip;
+// }
 
 std::optional<boost::asio::ip::address_v4> getNetmaskForIP(const boost::asio::ip::address_v4 &ip)
 {
