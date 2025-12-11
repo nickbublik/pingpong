@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "hash.hpp"
+#include "logger/logger.hpp"
 #include "net_common/net_connection.hpp"
 #include "net_common/net_message.hpp"
 #include "ppcommon.hpp"
@@ -60,7 +61,7 @@ class ClientReceiverSession : public ClientSession
     {
         using namespace Common;
 
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
         std::ofstream ofs(m_file, std::ios::out | std::ios::binary);
 
         if (!ofs.is_open())
@@ -85,14 +86,14 @@ class ClientReceiverSession : public ClientSession
                 auto msg = m_messages_in.pop_front().msg;
                 if (msg.header.id == EMessageType::Abort)
                 {
-                    std::cout << "Abort command from the server\n";
+                    std::cerr << "Abort command from the server\n";
                     op_result = false;
                     break;
                 }
                 else if (msg.header.id == EMessageType::Chunk)
                 {
                     const auto offset = SHA256_DIGEST_LENGTH;
-                    std::cout << "Incoming chunk of size " << msg.size() - offset << '\n';
+                    DBG_LOG("Incoming chunk of size ", msg.size() - offset);
                     {
                         Hash inc_hash;
                         msg >> inc_hash;
@@ -101,7 +102,7 @@ class ClientReceiverSession : public ClientSession
 
                         if (inc_hash != hash)
                         {
-                            std::cout << "Chunk control sums don't match. Aborting\n";
+                            std::cerr << "Chunk control sums don't match. Aborting\n";
                             op_result = false;
                             break;
                         }
@@ -110,13 +111,13 @@ class ClientReceiverSession : public ClientSession
                 }
                 else if (msg.header.id == EMessageType::FinalChunk)
                 {
-                    std::cout << "End of transmission. Finishing." << '\n';
+                    DBG_LOG("End of transmission. Finishing.");
                     finish = true;
                     break;
                 }
                 else
                 {
-                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(msg.header.id) << '\n';
+                    DBG_LOG("Skipped an unknown message from the server with header ", static_cast<uint32_t>(msg.header.id));
                 }
             }
         }
@@ -147,10 +148,10 @@ class ClientSenderSession : public ClientSession
     {
         using namespace Common;
 
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
         if (!std::filesystem::exists(m_file))
         {
-            std::cout << "File " << m_file << " doesn't exist\n";
+            std::cerr << "File " << m_file << " doesn't exist\n";
             return false;
         }
 
@@ -166,13 +167,13 @@ class ClientSenderSession : public ClientSession
                 auto incoming_msg = m_messages_in.pop_front().msg;
                 if (incoming_msg.header.id == EMessageType::Abort)
                 {
-                    std::cout << "Abort command from the server\n";
+                    std::cerr << "Abort command from the server\n";
                     op_result = false;
                     break;
                 }
                 else
                 {
-                    std::cout << "Skipped an unknown message from the server with header " << static_cast<uint32_t>(incoming_msg.header.id) << '\n';
+                    DBG_LOG("Skipped an unknown message from the server with header ", static_cast<uint32_t>(incoming_msg.header.id));
                 }
             }
 
@@ -197,7 +198,7 @@ class ClientSenderSession : public ClientSession
                 Hash hash = sha256_chunk(msg.body);
                 msg << hash;
 
-                std::cout << "Sending Chunk of size " << msg.size() - offset << '\n';
+                DBG_LOG("Sending Chunk of size ", msg.size() - offset);
             }
             else
             {
@@ -206,13 +207,13 @@ class ClientSenderSession : public ClientSession
 
             if (!m_sendcb(std::move(msg)))
             {
-                std::cout << __PRETTY_FUNCTION__ << " failed to send message\n";
+                DBG_LOG(__PRETTY_FUNCTION__, " failed to send message");
                 op_result = false;
                 break;
             }
         }
 
-        std::cout << "Sending FinalChunk\n";
+        DBG_LOG("Sending FinalChunk");
         Message final_msg = encode<EMessageType::FinalChunk>(Empty{});
         m_sendcb(std::move(final_msg));
 
@@ -258,7 +259,7 @@ class ServerOneToOneRetranslatorSession : public ServerSession
     {
         using namespace Common;
 
-        std::cout << __PRETTY_FUNCTION__ << " msg type: " << (int)msg.header.id << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__, " msg type: ", (int)msg.header.id);
 
         if (msg.header.id == EMessageType::Chunk || msg.header.id == EMessageType::FinalChunk || msg.header.id == EMessageType::Abort)
         {

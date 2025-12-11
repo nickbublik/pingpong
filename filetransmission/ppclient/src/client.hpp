@@ -5,7 +5,8 @@
 
 #include <net_common/net_client.hpp>
 
-#include "ppcommon/ppcommon.hpp"
+#include <logger/logger.hpp>
+#include <ppcommon/ppcommon.hpp>
 
 #include "discovery_client.hpp"
 
@@ -29,17 +30,17 @@ class FileClient : public Net::ClientBase<Common::EMessageType>
 
     bool autoConnect(uint16_t discovery_port, std::chrono::milliseconds timeout, std::chrono::milliseconds polling_delay = std::chrono::milliseconds(50))
     {
-        std::cout << __PRETTY_FUNCTION__ << " discovery_port = " << discovery_port << '\n';
+        DBG_LOG(" discovery_port = ", discovery_port);
         // std::optional<DiscoveredServer> res = discoverServer(m_context, discovery_port, timeout, polling_delay);
         std::optional<DiscoveredServer> res = discoverServerByUnicastBruteforce(m_context, discovery_port, timeout, polling_delay);
 
         if (res)
         {
-            std::cout << "Connecting to " << res->address << ":" << res->port << '\n';
+            DBG_LOG("Connecting to ", res->address, ":", res->port);
             return connect(res->address, res->port);
         }
 
-        std::cout << "Discovery failed, trying localhost fallback...\n";
+        DBG_LOG("Discovery failed, trying localhost fallback...");
         return connect("127.0.0.1", 60010);
     }
 };

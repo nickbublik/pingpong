@@ -2,6 +2,9 @@
 
 #include <chrono>
 
+#include <logger/logger.hpp>
+#include <tsqueue/tsqueue.hpp>
+
 #include "net_message.hpp"
 #include "net_server.hpp"
 
@@ -28,7 +31,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         {
             m_handshake_out = static_cast<uint64_t>(std::chrono::system_clock::now().time_since_epoch().count());
             m_handshake_crypted = obfuscate(m_handshake_out);
-            std::cout << (int)m_owner_type << " Connection ctr. m_handshake_out = " << m_handshake_out << ", m_handshake_crypted = " << m_handshake_crypted << '\n';
+            DBG_LOG((int)m_owner_type, " Connection ctr. m_handshake_out = ", m_handshake_out, ", m_handshake_crypted = ", m_handshake_crypted);
         }
     }
 
@@ -232,7 +235,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void writeValidation()
     {
-        std::cout << (int)m_owner_type << " writeValidation. m_handshake_out = " << m_handshake_out << '\n';
+        DBG_LOG((int)m_owner_type, " writeValidation. m_handshake_out = ", m_handshake_out);
         boost::asio::async_write(m_socket, boost::asio::buffer(&m_handshake_out, sizeof(uint64_t)),
                                  [this](std::error_code ec, std::size_t length)
                                  {
@@ -257,14 +260,14 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         boost::asio::async_read(m_socket, boost::asio::buffer(&m_handshake_in, sizeof(m_handshake_in)),
                                 [this, server](std::error_code ec, size_t length)
                                 {
-                                    std::cout << (int)m_owner_type << " readValidation result lambda. m_handshake_in = " << m_handshake_in << '\n';
+                                    DBG_LOG((int)m_owner_type, " readValidation result lambda. m_handshake_in = ", m_handshake_in);
                                     if (!ec)
                                     {
                                         if (m_owner_type == EOwner::Server)
                                         {
                                             if (m_handshake_in == m_handshake_crypted)
                                             {
-                                                std::cout << "[SERVER]: client validated\n";
+                                                DBG_LOG("[SERVER]: client validated");
                                                 m_validated.store(true, std::memory_order_release);
                                                 server->onClientValidated(this->shared_from_this());
 
@@ -272,20 +275,20 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                             }
                                             else
                                             {
-                                                std::cout << "[SERVER]: client failed to be validated\n";
+                                                DBG_LOG("[SERVER]: client failed to be validated");
                                                 m_socket.close();
                                             }
                                         }
                                         else if (m_owner_type == EOwner::Client)
                                         {
                                             m_handshake_out = obfuscate(m_handshake_in);
-                                            std::cout << (int)m_owner_type << " readValidation result lambda. m_handshake_out = " << m_handshake_out << '\n';
+                                            DBG_LOG((int)m_owner_type, " readValidation result lambda. m_handshake_out = ", m_handshake_out);
                                             writeValidation();
                                         }
                                     }
                                     else
                                     {
-                                        std::cout << "Client disconnected (on readValidation)\n";
+                                        DBG_LOG("Client disconnected (on readValidation)");
                                         m_socket.close();
                                     }
                                 });
@@ -348,7 +351,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     uint64_t obfuscate(uint64_t in)
     {
         uint64_t out = in ^ 0xBABA15ACAB0011FF;
-        out = (out & 0xC0A0C0A0B0B0B0) >> 4 | (out & 0x0C0A0C0A0B0B0B) << 4;
+        out = (out & 0xC0A0C0A0B0B0B0) >> 4 | (out & 0x0C0A0C0A0B0B0B), 4;
         return out ^ 0xBABA15FACE1EE788;
     }
 

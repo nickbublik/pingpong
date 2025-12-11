@@ -6,6 +6,7 @@
 
 #include <boost/bimap.hpp>
 
+#include "logger/logger.hpp"
 #include "net_common/net_server.hpp"
 #include "ppcommon/ppcommon.hpp"
 #include "ppcommon/session.hpp"
@@ -137,7 +138,7 @@ class FileServer : public Net::ServerBase<EMessageType>
     FileServer(uint16_t discovery_port, uint16_t port)
         : Net::ServerBase<EMessageType>(port), m_discovery_server(m_asio_context, discovery_port, port)
     {
-        std::cout << __PRETTY_FUNCTION__ << " discovery_port = " << discovery_port << ", tcp_port = " << port << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__, " discovery_port = ", discovery_port, ", tcp_port = ", port);
     }
 
     ~FileServer() override = default;
@@ -145,31 +146,29 @@ class FileServer : public Net::ServerBase<EMessageType>
   protected:
     void onClientValidated(ConnectionPtr client) override
     {
-        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG("[", client->getId(), "] ", __PRETTY_FUNCTION__);
     }
 
     bool onClientConnect(ConnectionPtr client) override
     {
-        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG("[", client->getId(), "] ", __PRETTY_FUNCTION__);
         return true;
     }
 
     void onClientDisconnect(ConnectionPtr client) override
     {
-        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG("[", client->getId(), "] ", __PRETTY_FUNCTION__);
         m_storage.removeSession(client);
         m_storage.removePendingSender(client);
     }
 
     void onSendEstablishment(ConnectionPtr client, Message &&msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
         m_storage.removePendingSender(client);
 
         PreMetadata pre = decode<EMessageType::Send>(msg);
-        std::cout << "send-request: file_name = " << pre.file_data.file_name
-                  << " file_size = " << pre.file_data.file_size
-                  << ", code = " << pre.code_phrase.code << '\n';
+        DBG_LOG("send-request: file_name = ", pre.file_data.file_name, " file_size = ", pre.file_data.file_size, ", code = ", pre.code_phrase.code);
 
         if (m_storage.getSessionBySender(client) != nullptr)
         {
@@ -180,23 +179,23 @@ class FileServer : public Net::ServerBase<EMessageType>
             m_storage.removePendingSender(client);
         }
 
-        std::cout << "[" << client->getId() << "]: new pending sender with code = " << pre.code_phrase.code << '\n';
+        DBG_LOG("[", client->getId(), "]: new pending sender with code = ", pre.code_phrase.code);
         m_storage.addPendingSender(client, m_max_chunk_size, pre);
     }
 
     void onReceiveEstablishment(ConnectionPtr client, Message &&msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
 
         PreMetadata request;
         msg >> request;
-        std::cout << "receive-request: code = " << request.code_phrase.code << '\n';
+        DBG_LOG("receive-request: code = ", request.code_phrase.code);
 
         ConnectionPtr sender = m_storage.getSenderByCode(request.code_phrase.code);
 
         if (!sender)
         {
-            std::cout << "[" << client->getId() << "]: failed to find a valid sender. Code phrase is invalid\n";
+            DBG_LOG("[", client->getId(), "]: failed to find a valid sender. Code phrase is invalid");
             Message reject_msg = encode<EMessageType::Reject>(Empty{});
             client->send(reject_msg);
             return;
@@ -206,7 +205,7 @@ class FileServer : public Net::ServerBase<EMessageType>
 
         if (!opt_context)
         {
-            std::cout << "[" << client->getId() << "]: failed to find sender's context. \n";
+            DBG_LOG("[", client->getId(), "]: failed to find sender's context.");
             Message reject_msg = encode<EMessageType::Reject>(Empty{});
             client->send(reject_msg);
             return;
@@ -219,17 +218,17 @@ class FileServer : public Net::ServerBase<EMessageType>
 
     void establishTransmissionSession(ConnectionPtr receiver, Message &&msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
 
         CodePhrase request;
         msg >> request;
-        std::cout << "establishTransmissionSession: code = " << request.code << '\n';
+        DBG_LOG("establishTransmissionSession: code = ", request.code);
 
         ConnectionPtr sender = m_storage.getSenderByCode(request.code);
 
         if (!sender)
         {
-            std::cout << "[" << receiver->getId() << "]: failed to receive file. Something went wrong\n";
+            DBG_LOG("[", receiver->getId(), "]: failed to receive file. Something went wrong");
             Message abort_msg = encode<EMessageType::Abort>(Empty{});
             receiver->send(abort_msg);
             return;
@@ -251,7 +250,7 @@ class FileServer : public Net::ServerBase<EMessageType>
         Message accept_msg = encode<EMessageType::Accept>((*context).post_metadata);
         sender->send(accept_msg);
 
-        std::cout << "Server starts to send files from " << sender->getId() << " to " << receiver->getId() << '\n';
+        DBG_LOG("Server starts to send files from ", sender->getId(), " to ", receiver->getId());
     }
 
     void finishSession(ConnectionPtr receiver)
@@ -260,7 +259,7 @@ class FileServer : public Net::ServerBase<EMessageType>
 
         if (sender)
         {
-            std::cout << "Sending Success to the sender\n";
+            DBG_LOG("Sending Success to the sender");
             Message success_msg = encode<EMessageType::Success>(Empty{});
             sender->send(success_msg);
 
@@ -269,13 +268,13 @@ class FileServer : public Net::ServerBase<EMessageType>
         }
         else
         {
-            std::cout << __PRETTY_FUNCTION__ << " session was not found\n";
+            DBG_LOG(__PRETTY_FUNCTION__, " session was not found");
         }
     }
 
     void removeSessionAbruptly(ConnectionPtr client)
     {
-        std::cout << "[" << client->getId() << "]: error in send-session. Aborting\n";
+        DBG_LOG("[", client->getId(), "]: error in send-session. Aborting");
 
         ServerSession *session = m_storage.getSessionBySender(client);
 
@@ -291,7 +290,7 @@ class FileServer : public Net::ServerBase<EMessageType>
 
     void onSessionedMessage(ConnectionPtr client, ServerSession *session, Message &&msg)
     {
-        std::cout << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG(__PRETTY_FUNCTION__);
 
         // FinalChunk: Success -> Sender , FinalChunk -> Receiver
         if (msg.header.id == EMessageType::FinalChunk)
@@ -307,12 +306,12 @@ class FileServer : public Net::ServerBase<EMessageType>
             const auto offset = SHA256_DIGEST_LENGTH;
             if (msg.size() - offset > m_max_chunk_size)
             {
-                std::cout << "[" << client->getId() << "]: exceeded max chunk size\n";
+                DBG_LOG("[", client->getId(), "]: exceeded max chunk size");
                 removeSessionAbruptly(client);
             }
             else if (!session->onMessage(std::move(msg)))
             {
-                std::cout << "[" << client->getId() << "]: message handling went wrong\n";
+                DBG_LOG("[", client->getId(), "]: message handling went wrong");
                 removeSessionAbruptly(client);
             }
         }
@@ -325,7 +324,7 @@ class FileServer : public Net::ServerBase<EMessageType>
 
     void onMessage(ConnectionPtr client, Message &&msg) override
     {
-        std::cout << "[" << client->getId() << "] " << __PRETTY_FUNCTION__ << '\n';
+        DBG_LOG("[", client->getId(), "] ", __PRETTY_FUNCTION__);
 
         ServerSession *session = m_storage.getSessionBySender(client);
 
@@ -350,13 +349,13 @@ class FileServer : public Net::ServerBase<EMessageType>
         }
         else if (msg.header.id == EMessageType::FinishReceive)
         {
-            std::cout << "on FinishReceive message\n";
+            DBG_LOG("on FinishReceive message");
             finishSession(client);
         }
         else if (msg.header.id == EMessageType::FailedReceive)
         {
-            std::cout << "on FailedReceive message\n";
-            std::cout << msg << '\n';
+            DBG_LOG("on FailedReceive message");
+            DBG_LOG(msg);
             ConnectionPtr sender = m_storage.getSenderByReceiver(client);
 
             if (sender)
@@ -366,7 +365,7 @@ class FileServer : public Net::ServerBase<EMessageType>
         }
         else
         {
-            std::cout << "[" << client->getId() << "]: unexpected message from a client. Type = " << static_cast<int>(msg.header.id) << '\n';
+            DBG_LOG("[", client->getId(), "]: unexpected message from a client. Type = ", static_cast<int>(msg.header.id));
         }
     }
 

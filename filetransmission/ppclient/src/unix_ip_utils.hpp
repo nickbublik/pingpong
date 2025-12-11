@@ -1,3 +1,5 @@
+#pragma once
+
 #include <boost/asio/ip/address_v4.hpp>
 
 #include <optional>

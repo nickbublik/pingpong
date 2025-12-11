@@ -39,7 +39,7 @@ class ServerBase
             return false;
         }
 
-        std::cout << c_log_prefix << " started!\n";
+        DBG_LOG(c_log_prefix, " started!");
         return true;
     }
 
@@ -50,7 +50,7 @@ class ServerBase
         if (m_context_thread.joinable())
             m_context_thread.join();
 
-        std::cout << c_log_prefix << " stopped\n";
+        DBG_LOG(c_log_prefix, " stopped");
     }
 
     // ASYNC
@@ -61,7 +61,7 @@ class ServerBase
             {
                 if (!ec)
                 {
-                    std::cout << c_log_prefix << " new connection: " << socket.remote_endpoint() << '\n';
+                    DBG_LOG(c_log_prefix, " new connection: ", socket.remote_endpoint());
 
                     std::shared_ptr<Connection<T>> new_conn = std::make_shared<Connection<T>>(
                         Connection<T>::EOwner::Server,
@@ -72,16 +72,16 @@ class ServerBase
                         m_connections.push_back(new_conn);
                         m_connections.back()->connectToClient(*this, m_id_counter++);
 
-                        std::cout << c_log_prefix << " [" << m_connections.back()->getId() << " ] connection approved\n";
+                        DBG_LOG(c_log_prefix, " [", m_connections.back()->getId(), " ] connection approved");
                     }
                     else
                     {
-                        std::cout << c_log_prefix << " connection denied\n";
+                        DBG_LOG(c_log_prefix, " connection denied");
                     }
                 }
                 else
                 {
-                    std::cout << c_log_prefix << " new connection error: " << ec.message() << '\n';
+                    DBG_LOG(c_log_prefix, " new connection error: ", ec.message());
                 }
 
                 waitForClientConnection();

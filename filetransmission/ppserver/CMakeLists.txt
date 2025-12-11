@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 find_package(Boost 1.89.0 REQUIRED
     COMPONENTS headers
     CONFIG
@@ -24,13 +18,11 @@ add_executable(${PROJECT_NAME}
     src/discovery_server.cpp
 )
 
-set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 target_link_libraries(${PROJECT_NAME}
-    PRIVATE Boost::headers           # or Boost::boost on older CMake
+    PRIVATE Boost::headers
     PRIVATE Threads::Threads
     PRIVATE OpenSSL::Crypto
     PRIVATE net_common
     PRIVATE ppcommon
+    PRIVATE logger
 )
