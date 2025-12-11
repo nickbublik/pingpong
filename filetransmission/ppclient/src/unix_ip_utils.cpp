@@ -8,7 +8,6 @@
 
 namespace PingPong
 {
-
 namespace
 {
 using boost::asio::ip::address_v4;
@@ -50,7 +49,8 @@ std::optional<address_v4> getLocalIPv4(std::string &out_ifc_name)
 
     std::optional<address_v4> best_private;
     std::optional<address_v4> best_nonloopback;
-    std::string best_private_ifc, best_nonloopback_if;
+    std::string best_private_ifc;
+    std::string best_nonloopback_if;
 
     for (struct ifaddrs *ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next)
     {
@@ -113,20 +113,6 @@ std::optional<address_v4> getLocalIPv4(std::string &out_ifc_name)
 
     return std::nullopt;
 }
-
-// boost::asio::ip::address_v4 getLocalIPv4()
-//{
-//     using boost::asio::ip::udp;
-//
-//     boost::asio::io_context ctx;
-//     udp::socket tmp(ctx);
-//
-//     tmp.connect(udp::endpoint(boost::asio::ip::make_address_v4("8.8.8.8"), 80));
-//
-//     auto endpoint = tmp.local_endpoint();
-//     auto ip = endpoint.address().to_v4();
-//     return ip;
-// }
 
 std::optional<boost::asio::ip::address_v4> getNetmaskForIP(const boost::asio::ip::address_v4 &ip)
 {
