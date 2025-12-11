@@ -91,8 +91,12 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         size_t bytes = sock.receive_from(boost::asio::buffer(buffer),
                                          sender_endpoint, 0, ec);
 
+        if (ec != boost::asio::error::would_block)
+            std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
+
         if (!ec && bytes > 0)
         {
+            std::cout << "[DISCOVERY] response, no error\n";
             std::string_view data(buffer.data(), bytes);
 
             if (data.rfind(c_response_phrase, 0) == 0)
@@ -124,10 +128,10 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     return std::nullopt;
 }
 
-std::optional<DiscoveredServer> discoverServer(boost::asio::io_context &context,
-                                               uint16_t discovery_port,
-                                               std::chrono::milliseconds timeout,
-                                               std::chrono::milliseconds polling_delay)
+std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_context &context,
+                                                          uint16_t discovery_port,
+                                                          std::chrono::milliseconds timeout,
+                                                          std::chrono::milliseconds polling_delay)
 {
     std::cout << __PRETTY_FUNCTION__ << " 1\n";
     using boost::asio::ip::udp;
