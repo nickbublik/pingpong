@@ -49,6 +49,8 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         return std::nullopt;
     }
 
+    std::cout << "[DISCOVERY] local ip = " << local_ip_opt->to_string() << "\n";
+
     auto netmask_opt = getNetmaskForIP(*local_ip_opt);
 
     if (!netmask_opt)
