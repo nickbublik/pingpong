@@ -24,7 +24,7 @@ std::string getLocalSubnet()
     auto endpoint = tmp.local_endpoint();
     auto ip = endpoint.address().to_v4();
 
-    // Example: 192.168.0.108 → "192.168.0."
+    // Example: 192.168.0.108 -> "192.168.0."
     auto raw = ip.to_string();
     auto lastDot = raw.rfind('.');
     return raw.substr(0, lastDot + 1);
@@ -40,8 +40,18 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     static constexpr char c_discovery_phrase[] = "pingpong_discover_v1";
     static constexpr char c_response_phrase[] = "pingpong_server_v1";
 
-    auto local_ip = getLocalIPv4();
-    auto netmask_opt = getNetmaskForIP(local_ip);
+    std::string ifc;
+    auto local_ip_opt = getLocalIPv4(ifc);
+
+    if (!local_ip_opt)
+    {
+        std::cout << "[DISCOVERY] failed to get local ip\n";
+        return std::nullopt;
+    }
+
+    std::cout << "[DISCOVERY] local ip = " << local_ip_opt->to_string() << "\n";
+
+    auto netmask_opt = getNetmaskForIP(*local_ip_opt);
 
     if (!netmask_opt)
     {
@@ -49,9 +59,9 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         return std::nullopt;
     }
 
-    SubnetRange subrange = getSubnetRange(local_ip, *netmask_opt);
+    SubnetRange subrange = getSubnetRange(*local_ip_opt, *netmask_opt);
 
-    std::cout << "[DISCOVERY] local_ip   = " << local_ip.to_string() << "\n"
+    std::cout << "[DISCOVERY] local_ip   = " << local_ip_opt->to_string() << "\n"
               << "[DISCOVERY] netmask    = " << netmask_opt->to_string() << "\n"
               << "[DISCOVERY] network    = " << subrange.network.to_string() << "\n"
               << "[DISCOVERY] broadcast  = " << subrange.broadcast.to_string() << "\n"
@@ -71,7 +81,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
     for (uint32_t addr_int = first_host_int; addr_int <= last_host_int; ++addr_int)
     {
         boost::asio::ip::address_v4 addr(addr_int);
-        if (addr == local_ip)
+        if (addr == *local_ip_opt)
             continue;
 
         udp::endpoint endpoint(addr, discovery_port);
@@ -91,7 +101,7 @@ std::optional<DiscoveredServer> discoverServerByUnicastBruteforce(
         size_t bytes = sock.receive_from(boost::asio::buffer(buffer),
                                          sender_endpoint, 0, ec);
 
-        if (ec != boost::asio::error::would_block)
+        if (!ec && ec != boost::asio::error::would_block)
             std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
 
         if (!ec && bytes > 0)
@@ -166,8 +176,8 @@ std::optional<DiscoveredServer> discoverServerByBroadcast(boost::asio::io_contex
         boost::system::error_code ec;
         size_t bytes = socket.receive_from(boost::asio::buffer(buffer), sender_endpoint, 0, ec);
 
-        if (ec != boost::asio::error::would_block)
-            std::cout << __PRETTY_FUNCTION__ << " error : " << ec.message() << '\n';
+        if (!ec && ec != boost::asio::error::would_block)
+            std::cout << "[DISCOVERY] error : " << ec.message() << '\n';
 
         if (!ec && bytes > 0)
         {
