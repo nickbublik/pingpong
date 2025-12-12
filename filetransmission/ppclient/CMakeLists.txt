@@ -28,5 +28,6 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE OpenSSL::Crypto
     PRIVATE net_common
     PRIVATE ppcommon
+    PRIVATE ppgenerator
     PRIVATE logger
 )

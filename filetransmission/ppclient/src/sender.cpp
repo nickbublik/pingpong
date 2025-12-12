@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "ppcommon/session.hpp"
+#include "ppgenerator/phrase_generator.hpp"
 
 namespace PingPong
 {
@@ -35,7 +36,7 @@ bool establishSession(FileClient &c, const Operation &op, uint64_t &out_chunksiz
         {
             pre.payload_type = EPayloadType::File;
 
-            pre.code_phrase.code = "abc";
+            pre.code_phrase.code = getRandomPhrase();
             pre.code_phrase.code_size = pre.code_phrase.code.size();
 
             pre.file_data.file_name = op.filepath.filename();
