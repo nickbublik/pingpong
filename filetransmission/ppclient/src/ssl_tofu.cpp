@@ -52,15 +52,9 @@ std::string getShortenedCode(const std::string &fingerprint)
     std::string hex;
     hex.reserve(std::min(cnt, fingerprint.size()));
 
-    size_t i;
-    if (fingerprint.size() < cnt)
-    {
-        i = 0;
-    }
-    else
-    {
+    size_t i = 0;
+    if (fingerprint.size() >= cnt)
         i = fingerprint.size() - cnt;
-    }
 
     for (; i < fingerprint.size(); ++i)
     {
@@ -70,13 +64,6 @@ std::string getShortenedCode(const std::string &fingerprint)
     DBG_LOG("shortened code: ", hex);
 
     return hex;
-}
-
-std::filesystem::path defaultKnownHostsPath()
-{
-    const char *home = std::getenv("HOME");
-    std::filesystem::path p = home ? home : ".";
-    return p / ".config" / "pingpong" / "known_hosts";
 }
 
 std::unordered_map<std::string, std::string> loadKnownHosts(const std::filesystem::path &path)

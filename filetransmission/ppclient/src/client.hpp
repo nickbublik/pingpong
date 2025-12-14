@@ -53,6 +53,7 @@ class FileClient : public Net::ClientBase<Common::EMessageType>
 
     void setFingerprintVerifier(boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &ssl_socket, const std::string &expected_fingerprint);
 
+    std::filesystem::path defaultKnownHostsPath();
     TofuDecision tofuPrompt(const std::string &server_id, const std::string &fingerprint);
 
     std::optional<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> connectTLSWithTofu(

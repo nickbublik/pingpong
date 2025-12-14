@@ -99,6 +99,13 @@ void FileClient::setFingerprintVerifier(ssl::stream<tcp::socket> &ssl_socket, co
         });
 }
 
+std::filesystem::path FileClient::defaultKnownHostsPath()
+{
+    const char *home = std::getenv("HOME");
+    std::filesystem::path p = home ? home : ".";
+    return p / ".config" / "pingpong" / "known_hosts";
+}
+
 TofuDecision FileClient::tofuPrompt(const std::string &server_id, const std::string &fingerprint)
 {
     std::cout << "\n[TOFU] First time seeing server: " << server_id << "\n"
