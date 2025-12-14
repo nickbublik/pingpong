@@ -12,37 +12,10 @@
 
 namespace PingPong
 {
-using Message = Common::Message;
-
-class FileClient : public Net::ClientBase<Common::EMessageType>
+struct TofuDecision
 {
-  public:
-    FileClient()
-    {
-    }
-
-    ~FileClient() override = default;
-
-    void waitForIncomingQueueMessage(const std::chrono::milliseconds &check_period)
-    {
-        m_connection->waitForIncomingQueueMessage(check_period);
-    }
-
-    bool autoConnect(uint16_t discovery_port, std::chrono::milliseconds timeout, std::chrono::milliseconds polling_delay = std::chrono::milliseconds(50))
-    {
-        DBG_LOG(" discovery_port = ", discovery_port);
-        // std::optional<DiscoveredServer> res = discoverServer(m_context, discovery_port, timeout, polling_delay);
-        std::optional<DiscoveredServer> res = discoverServerByUnicastBruteforce(m_context, discovery_port, timeout, polling_delay);
-
-        if (res)
-        {
-            DBG_LOG("Connecting to ", res->address, ":", res->port);
-            return connect(res->address, res->port);
-        }
-
-        DBG_LOG("Discovery failed, trying localhost fallback...");
-        return connect("127.0.0.1", 60010);
-    }
+    bool trusted = false;
+    std::string fingerprint;
 };
 
 namespace fs = std::filesystem;
@@ -60,4 +33,33 @@ struct Operation
     fs::path filepath;
     std::string receival_code_phrase;
 };
+
+using Message = Common::Message;
+
+class FileClient : public Net::ClientBase<Common::EMessageType>
+{
+  public:
+    FileClient();
+
+    ~FileClient() override = default;
+
+    void waitForIncomingQueueMessage(const std::chrono::milliseconds &check_period);
+
+    bool autoConnect(uint16_t discovery_port,
+                     std::chrono::milliseconds timeout,
+                     std::chrono::milliseconds polling_delay = std::chrono::milliseconds(50));
+
+    boost::asio::ssl::context createSSLContext();
+
+    void setFingerprintVerifier(boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &ssl_socket, const std::string &expected_fingerprint);
+
+    TofuDecision tofuPrompt(const std::string &server_id, const std::string &fingerprint);
+
+    std::optional<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> connectTLSWithTofu(
+        boost::asio::io_context &io_context,
+        const std::string &host,
+        uint16_t port,
+        const std::string &server_id);
+};
+
 } // namespace PingPong

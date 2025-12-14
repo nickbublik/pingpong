@@ -15,7 +15,7 @@ class ServerBase
 
   public:
     ServerBase(uint16_t port)
-        : m_asio_acceptor(m_asio_context, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port))
+        : m_asio_acceptor(m_asio_context, boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), port)), m_ssl_context{createSSLContext()}
     {
     }
 
@@ -26,6 +26,8 @@ class ServerBase
 
     bool start()
     {
+        DBG_LOG(c_log_prefix, " start()");
+
         try
         {
             waitForClientConnection();
@@ -53,6 +55,23 @@ class ServerBase
         DBG_LOG(c_log_prefix, " stopped");
     }
 
+    ssl::context createSSLContext()
+    {
+        ssl::context context(ssl::context::tls_server);
+        // clang-format off
+        context.set_options(
+              ssl::context::default_workarounds
+            | ssl::context::no_sslv2
+            | ssl::context::no_sslv3
+            | ssl::context::single_dh_use);
+        // clang-format on
+
+        context.use_certificate_chain_file("certs/server.crt");
+        context.use_private_key_file("certs/server.key", ssl::context::pem);
+
+        return context;
+    }
+
     // ASYNC
     void waitForClientConnection()
     {
@@ -62,22 +81,37 @@ class ServerBase
                 if (!ec)
                 {
                     DBG_LOG(c_log_prefix, " new connection: ", socket.remote_endpoint());
+                    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_sock(std::move(socket), m_ssl_context);
 
                     std::shared_ptr<Connection<T>> new_conn = std::make_shared<Connection<T>>(
                         Connection<T>::EOwner::Server,
-                        m_asio_context, std::move(socket), m_messages_in);
+                        m_asio_context, std::move(ssl_sock), m_messages_in);
 
-                    if (onClientConnect(new_conn))
-                    {
-                        m_connections.push_back(new_conn);
-                        m_connections.back()->connectToClient(*this, m_id_counter++);
+                    new_conn->sslSocket().async_handshake(
+                        ssl::stream_base::server,
+                        [this, new_conn](auto ec_handshake)
+                        {
+                            if (!ec_handshake)
+                            {
+                                DBG_LOG(c_log_prefix, " handshake successful for ", new_conn->getId());
 
-                        DBG_LOG(c_log_prefix, " [", m_connections.back()->getId(), " ] connection approved");
-                    }
-                    else
-                    {
-                        DBG_LOG(c_log_prefix, " connection denied");
-                    }
+                                if (onClientConnect(new_conn))
+                                {
+                                    m_connections.push_back(new_conn);
+                                    m_connections.back()->connectToClient(*this, m_id_counter++);
+
+                                    DBG_LOG(c_log_prefix, " [", m_connections.back()->getId(), " ] connection approved");
+                                }
+                                else
+                                {
+                                    DBG_LOG(c_log_prefix, " connection denied");
+                                }
+                            }
+                            else
+                            {
+                                DBG_LOG(c_log_prefix, " handshake error: ", ec_handshake.message());
+                            }
+                        });
                 }
                 else
                 {
@@ -166,6 +200,8 @@ class ServerBase
     boost::asio::io_context m_asio_context;
     std::thread m_context_thread;
     boost::asio::ip::tcp::acceptor m_asio_acceptor;
+
+    ssl::context m_ssl_context;
 
     uint32_t m_id_counter = 10000;
 };

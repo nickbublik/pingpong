@@ -14,17 +14,20 @@ project(ppclient
 )
 
 add_executable(${PROJECT_NAME}
+    src/client.cpp
     src/receiver.cpp
     src/sender.cpp
     src/main.cpp
     src/discovery_client.cpp
     src/unix_ip_utils.cpp
+    src/ssl_tofu.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE Threads::Threads
     PRIVATE Boost::headers
     PRIVATE Boost::program_options
+    PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
     PRIVATE net_common
     PRIVATE ppcommon

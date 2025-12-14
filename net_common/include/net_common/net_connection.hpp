@@ -5,6 +5,7 @@
 #include <logger/logger.hpp>
 #include <tsqueue/tsqueue.hpp>
 
+#include "net_common.hpp"
 #include "net_message.hpp"
 #include "net_server.hpp"
 
@@ -17,6 +18,8 @@ template <typename T>
 class Connection : public std::enable_shared_from_this<Connection<T>>
 {
   public:
+    using ssl_socket = ssl::stream<tcp::socket>;
+
     enum class EOwner
     {
         Server,
@@ -24,8 +27,8 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     };
 
   public:
-    Connection(EOwner parent, boost::asio::io_context &context, boost::asio::ip::tcp::socket socket, TSQueue<OwnedMessage<T>> &messages_in)
-        : m_asio_context{context}, m_socket{std::move(socket)}, m_messages_in{messages_in}, m_owner_type{parent}
+    Connection(EOwner parent, boost::asio::io_context &context, ssl_socket &&socket, TSQueue<OwnedMessage<T>> &messages_in)
+        : m_asio_context{context}, m_ssl_socket(std::move(socket)), m_messages_in{messages_in}, m_owner_type{parent}
     {
         if (m_owner_type == EOwner::Server)
         {
@@ -44,10 +47,9 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         return m_id;
     }
 
-  public:
     void connectToClient(ServerBase<T> &server, uint32_t uid)
     {
-        if (m_owner_type == EOwner::Server && m_socket.is_open())
+        if (m_owner_type == EOwner::Server /* && m_ssl_socket.is_open()*/)
         {
             m_id = uid;
 
@@ -56,30 +58,29 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         }
     }
 
-    void connectToServer(const boost::asio::ip::tcp::resolver::results_type &endpoints)
+    void startAsClient()
     {
         if (m_owner_type == EOwner::Client)
         {
-            boost::asio::async_connect(
-                m_socket,
-                endpoints,
-                [this](std::error_code ec, boost::asio::ip::tcp::endpoint endpoint)
-                {
-                    if (!ec)
-                    {
-                        // readHeader();
-                        readValidation();
-                    }
-                });
+            DBG_LOG(getId(), " tries to connect to the server");
+            readValidation();
         }
+    }
+
+    void shutdownSocket()
+    {
+        boost::system::error_code ec;
+        std::ignore = m_ssl_socket.shutdown(ec);
+        std::ignore = m_ssl_socket.lowest_layer().close(ec);
     }
 
     void disconnect()
     {
         if (isConnected())
         {
-            boost::asio::post(m_asio_context, [self = this->shared_from_this()]()
-                              { self->m_socket.close(); });
+            boost::asio::post(m_asio_context,
+                              [self = this->shared_from_this()]()
+                              { self->shutdownSocket(); });
         }
     }
 
@@ -89,7 +90,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                           {
                               if (self->m_messages_out.empty())
                               {
-                                  self->m_socket.close();
+                                  self->shutdownSocket();
                               }
                               else {
                                   self->m_close_after_flush = true;
@@ -98,7 +99,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
 
     bool isConnected() const
     {
-        return m_socket.is_open();
+        return m_ssl_socket.lowest_layer().is_open();
     }
 
     bool isValidated() const
@@ -106,9 +107,9 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
         return m_validated.load(std::memory_order_acquire);
     }
 
-    void startListening()
-    {
-    }
+    // tcp::socket &rawSocket() { return m_ssl_socket; }
+
+    ssl_socket &sslSocket() { return m_ssl_socket; }
 
   public:
     bool send(const Message<T> msg)
@@ -160,7 +161,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void writeHeader()
     {
-        boost::asio::async_write(m_socket, boost::asio::buffer(&m_messages_out.front().header, sizeof(MessageHeader<T>)),
+        boost::asio::async_write(m_ssl_socket, boost::asio::buffer(&m_messages_out.front().header, sizeof(MessageHeader<T>)),
                                  [this](std::error_code ec, size_t length)
                                  {
                                      if (!ec)
@@ -187,13 +188,13 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                              }
                                              else if (m_close_after_flush)
                                              {
-                                                 m_socket.close();
+                                                 shutdownSocket();
                                              }
                                          }
                                      }
                                      else
                                      {
-                                         m_socket.close();
+                                         shutdownSocket();
                                      }
                                  });
     }
@@ -201,7 +202,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void writeBody()
     {
-        boost::asio::async_write(m_socket, boost::asio::buffer(m_messages_out.front().body.data(), m_messages_out.front().body.size()),
+        boost::asio::async_write(m_ssl_socket, boost::asio::buffer(m_messages_out.front().body.data(), m_messages_out.front().body.size()),
                                  [this](std::error_code ec, size_t length)
                                  {
                                      if (!ec)
@@ -222,12 +223,12 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                          }
                                          else if (m_close_after_flush)
                                          {
-                                             m_socket.close();
+                                             shutdownSocket();
                                          }
                                      }
                                      else
                                      {
-                                         m_socket.close();
+                                         shutdownSocket();
                                      }
                                  });
     }
@@ -236,7 +237,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     void writeValidation()
     {
         DBG_LOG((int)m_owner_type, " writeValidation. m_handshake_out = ", m_handshake_out);
-        boost::asio::async_write(m_socket, boost::asio::buffer(&m_handshake_out, sizeof(uint64_t)),
+        boost::asio::async_write(m_ssl_socket, boost::asio::buffer(&m_handshake_out, sizeof(uint64_t)),
                                  [this](std::error_code ec, std::size_t length)
                                  {
                                      if (!ec)
@@ -249,7 +250,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                      }
                                      else
                                      {
-                                         m_socket.close();
+                                         shutdownSocket();
                                      }
                                  });
     }
@@ -257,7 +258,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void readValidation(ServerBase<T> *server = nullptr)
     {
-        boost::asio::async_read(m_socket, boost::asio::buffer(&m_handshake_in, sizeof(m_handshake_in)),
+        boost::asio::async_read(m_ssl_socket, boost::asio::buffer(&m_handshake_in, sizeof(m_handshake_in)),
                                 [this, server](std::error_code ec, size_t length)
                                 {
                                     DBG_LOG((int)m_owner_type, " readValidation result lambda. m_handshake_in = ", m_handshake_in);
@@ -276,7 +277,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                             else
                                             {
                                                 DBG_LOG("[SERVER]: client failed to be validated");
-                                                m_socket.close();
+                                                shutdownSocket();
                                             }
                                         }
                                         else if (m_owner_type == EOwner::Client)
@@ -289,7 +290,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                     else
                                     {
                                         DBG_LOG("Client disconnected (on readValidation)");
-                                        m_socket.close();
+                                        shutdownSocket();
                                     }
                                 });
     }
@@ -297,7 +298,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void readHeader()
     {
-        boost::asio::async_read(m_socket, boost::asio::buffer(&m_forming_in_message.header, sizeof(MessageHeader<T>)),
+        boost::asio::async_read(m_ssl_socket, boost::asio::buffer(&m_forming_in_message.header, sizeof(MessageHeader<T>)),
                                 [this](std::error_code ec, size_t length)
                                 {
                                     if (!ec)
@@ -314,7 +315,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                     }
                                     else
                                     {
-                                        m_socket.close();
+                                        shutdownSocket();
                                     }
                                 });
     }
@@ -322,7 +323,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     // ASYNC
     void readBody()
     {
-        boost::asio::async_read(m_socket, boost::asio::buffer(m_forming_in_message.body.data(), m_forming_in_message.body.size()),
+        boost::asio::async_read(m_ssl_socket, boost::asio::buffer(m_forming_in_message.body.data(), m_forming_in_message.body.size()),
                                 [this](std::error_code ec, size_t length)
                                 {
                                     if (!ec)
@@ -331,7 +332,7 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
                                     }
                                     else
                                     {
-                                        m_socket.close();
+                                        shutdownSocket();
                                     }
                                 });
     }
@@ -356,7 +357,8 @@ class Connection : public std::enable_shared_from_this<Connection<T>>
     }
 
   protected:
-    boost::asio::ip::tcp::socket m_socket;
+    // boost::asio::ip::tcp::socket m_ssl_socket;
+    ssl_socket m_ssl_socket;
     boost::asio::io_context &m_asio_context;
     TSQueue<Message<T>> m_messages_out;
     TSQueue<OwnedMessage<T>> &m_messages_in;
