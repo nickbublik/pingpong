@@ -43,11 +43,8 @@ class ClientBase
         if (!m_connection && !m_context_thread.joinable())
             return;
 
-        // Only call through if connection exists
         if (m_connection && m_connection->isConnected())
-        {
             m_connection->disconnect();
-        }
 
         m_context.stop();
 
@@ -109,8 +106,6 @@ class ClientBase
     boost::asio::io_context m_context;
     std::thread m_context_thread;
     std::shared_ptr<Connection<T>> m_connection;
-
-    ;
 
   private:
     TSQueue<OwnedMessage<T>> m_messages_in;
