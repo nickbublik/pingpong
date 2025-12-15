@@ -34,7 +34,7 @@ bool FileClient::autoConnect(uint16_t discovery_port,
             return false;
         }
 
-        return connect(res->address, res->port, *std::move(ssl_socket_opt));
+        return connect(*std::move(ssl_socket_opt));
     }
 
     DBG_LOG("Discovery failed, trying localhost fallback...");
@@ -48,7 +48,7 @@ bool FileClient::autoConnect(uint16_t discovery_port,
         std::cerr << "Failed to get ssl_socket. Aborting.\n";
         return false;
     }
-    return connect(fallback_addr, fallback_port, *std::move(ssl_socket_opt));
+    return connect(*std::move(ssl_socket_opt));
 }
 
 ssl::context FileClient::createSSLContext()
@@ -69,33 +69,24 @@ void FileClient::setFingerprintVerifier(ssl::stream<tcp::socket> &ssl_socket, co
     ssl_socket.set_verify_callback(
         [expected_fingerprint](bool, ssl::verify_context &verify_context)
         {
+            DBG_LOG("inside of fingerprint verifier callback");
+            // verify leaf cert that is on depth == 0, ignoring issuer's depth 1 and beyond
             int depth = X509_STORE_CTX_get_error_depth(verify_context.native_handle());
             if (depth != 0)
                 return true;
 
             X509 *cert = X509_STORE_CTX_get_current_cert(verify_context.native_handle());
-
             if (!cert)
                 return false;
 
-            unsigned char digest[EVP_MAX_MD_SIZE];
-            unsigned int digest_length = 0;
+            auto fingerprint_opt = Tofu::getSHA256Fingerprint(cert);
 
-            if (!X509_digest(cert, EVP_sha256(), digest, &digest_length))
+            if (!fingerprint_opt)
                 return false;
 
-            std::stringstream ss;
-            for (auto i = 0; i < digest_length; ++i)
-            {
-                if (i)
-                    ss << ':';
-
-                ss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(digest[i]);
-            }
-
-            DBG_LOG("ssl_socket fingerprint = ", ss.str());
+            DBG_LOG("ssl_socket fingerprint = ", *fingerprint_opt);
             DBG_LOG("expected   fingerprint = ", expected_fingerprint);
-            return ss.str() == expected_fingerprint;
+            return *fingerprint_opt == expected_fingerprint;
         });
 }
 
@@ -110,7 +101,7 @@ TofuDecision FileClient::tofuPrompt(const std::string &server_id, const std::str
 {
     std::cout << "\n[TOFU] First time seeing server: " << server_id << "\n"
               << "Fingerprint (SHA-256): " << fingerprint << "\n"
-              << "Short code: " << getShortenedCode(fingerprint) << "\n"
+              << "Short code: " << Tofu::getShortenedCode(fingerprint) << "\n"
               << "Trust this server? (y/N): " << std::endl;
 
     char ans = 'N';
@@ -126,13 +117,13 @@ std::optional<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> FileClient
     const std::string &server_id)
 {
     auto known_path = defaultKnownHostsPath();
-    auto known = loadKnownHosts(known_path);
+    auto known = Tofu::loadKnownHosts(known_path);
 
     boost::system::error_code ec;
 
     tcp::resolver resolver(io_context);
 
-    // Phase 1: probe (no verify), read fingerprint
+    DBG_LOG("Phase 1: probe (no verify), read fingerprint");
     {
         ssl::context probe_context = createSSLContext();
         ssl::stream<tcp::socket> probe_stream(io_context, probe_context);
@@ -150,8 +141,8 @@ std::optional<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> FileClient
         if (ec)
             return std::nullopt;
 
-        std::string fingerprint = getSHA256CertFingerprintFromSSLStream(probe_stream);
-        if (fingerprint.empty())
+        auto fingerprint_opt = Tofu::getSHA256CertFingerprintFromSSLStream(probe_stream);
+        if (!fingerprint_opt || fingerprint_opt->empty())
             return std::nullopt;
 
         probe_stream.next_layer().close();
@@ -161,31 +152,31 @@ std::optional<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> FileClient
 
         if (it == known.end())
         {
-            auto decision = tofuPrompt(server_id, fingerprint);
+            auto decision = tofuPrompt(server_id, *fingerprint_opt);
             if (!decision.trusted)
             {
                 std::cerr << "[TOFU] Not trusted. Aborting.\n";
                 return std::nullopt;
             }
 
-            known[server_id] = fingerprint;
-            saveKnownHosts(known_path, known);
+            known[server_id] = *fingerprint_opt;
+            Tofu::saveKnownHosts(known_path, known);
             DBG_LOG("[TOFU] Saved trust for ", server_id);
         }
         else
         {
-            if (it->second != fingerprint)
+            if (it->second != *fingerprint_opt)
             {
                 std::cerr << "[TOFU] WARNING: server fingerprint CHANGED!\n"
                           << "Known: " << it->second << "\n"
-                          << "Now:   " << fingerprint << "\n"
+                          << "Now:   " << *fingerprint_opt << "\n"
                           << "Refusing to connect.\n";
                 return std::nullopt;
             }
         }
     }
 
-    // Phase 2: real connection (enforce fingerprint during handshake)
+    DBG_LOG("Phase 2: real connection (enforce fingerprint during handshake)");
     ssl::context real_context = createSSLContext();
     ssl::stream<tcp::socket> real_stream(io_context, real_context);
 

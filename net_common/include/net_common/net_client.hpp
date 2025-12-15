@@ -20,15 +20,10 @@ class ClientBase
     }
 
   public:
-    bool connect(const std::string &host,
-                 const uint16_t port,
-                 boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &&m_ssl_context)
+    bool connect(boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &&m_ssl_context)
     {
         try
         {
-            boost::asio::ip::tcp::resolver resolver(m_context);
-            boost::asio::ip::tcp::resolver::results_type endpoints = resolver.resolve(host, std::to_string(port));
-
             m_connection = std::make_shared<Connection<T>>(Connection<T>::EOwner::Client, m_context, std::move(m_ssl_context), m_messages_in);
             m_connection->startAsClient();
             m_context_thread = std::thread([this]()

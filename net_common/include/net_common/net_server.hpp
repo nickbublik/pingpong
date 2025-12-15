@@ -31,7 +31,6 @@ class ServerBase
         try
         {
             waitForClientConnection();
-
             m_context_thread = std::thread([this]()
                                            { m_asio_context.run(); });
         }
@@ -47,6 +46,8 @@ class ServerBase
 
     void stop()
     {
+        DBG_LOG(c_log_prefix, " stopping");
+
         m_asio_context.stop();
 
         if (m_context_thread.joinable())
@@ -78,45 +79,44 @@ class ServerBase
         m_asio_acceptor.async_accept(
             [this](std::error_code ec, boost::asio::ip::tcp::socket socket)
             {
-                if (!ec)
-                {
-                    DBG_LOG(c_log_prefix, " new connection: ", socket.remote_endpoint());
-                    boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_sock(std::move(socket), m_ssl_context);
-
-                    std::shared_ptr<Connection<T>> new_conn = std::make_shared<Connection<T>>(
-                        Connection<T>::EOwner::Server,
-                        m_asio_context, std::move(ssl_sock), m_messages_in);
-
-                    new_conn->sslSocket().async_handshake(
-                        ssl::stream_base::server,
-                        [this, new_conn](auto ec_handshake)
-                        {
-                            if (!ec_handshake)
-                            {
-                                DBG_LOG(c_log_prefix, " handshake successful for ", new_conn->getId());
-
-                                if (onClientConnect(new_conn))
-                                {
-                                    m_connections.push_back(new_conn);
-                                    m_connections.back()->connectToClient(*this, m_id_counter++);
-
-                                    DBG_LOG(c_log_prefix, " [", m_connections.back()->getId(), " ] connection approved");
-                                }
-                                else
-                                {
-                                    DBG_LOG(c_log_prefix, " connection denied");
-                                }
-                            }
-                            else
-                            {
-                                DBG_LOG(c_log_prefix, " handshake error: ", ec_handshake.message());
-                            }
-                        });
-                }
-                else
+                if (ec)
                 {
                     DBG_LOG(c_log_prefix, " new connection error: ", ec.message());
+                    waitForClientConnection();
+                    return;
                 }
+
+                DBG_LOG(c_log_prefix, " new connection: ", socket.remote_endpoint());
+                boost::asio::ssl::stream<boost::asio::ip::tcp::socket> ssl_sock(std::move(socket), m_ssl_context);
+
+                std::shared_ptr<Connection<T>> new_conn = std::make_shared<Connection<T>>(
+                    Connection<T>::EOwner::Server,
+                    m_asio_context, std::move(ssl_sock), m_messages_in);
+
+                new_conn->sslSocket().async_handshake(
+                    ssl::stream_base::server,
+                    [this, new_conn](auto ec_handshake)
+                    {
+                        if (ec_handshake)
+                        {
+                            DBG_LOG(c_log_prefix, " handshake error: ", ec_handshake.message());
+                            return;
+                        }
+
+                        DBG_LOG(c_log_prefix, " handshake successful for ", new_conn->getId());
+
+                        if (onClientConnect(new_conn))
+                        {
+                            m_connections.push_back(new_conn);
+                            m_connections.back()->connectToClient(*this, m_id_counter++);
+
+                            DBG_LOG(c_log_prefix, " [", m_connections.back()->getId(), " ] connection approved");
+                        }
+                        else
+                        {
+                            DBG_LOG(c_log_prefix, " connection denied");
+                        }
+                    });
 
                 waitForClientConnection();
             });
